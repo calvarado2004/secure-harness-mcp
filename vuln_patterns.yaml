@@ -1,0 +1,167 @@
+# Weakness taxonomy for the repo vulnerability auditor (Phase 2).
+#
+# Each entry is a DETECTOR that produces CANDIDATES, not conclusions — the exact
+# analogue of a raw oracle signal in Phase 1. A candidate is guilty of being noise
+# until an adversarial verifier proves it is a real, reachable weakness. Severity
+# is a triage hint, never a verdict. `refute` tells the verifier how to try to kill
+# the finding (the burden of proof is on confirming, not dismissing).
+#
+# Language: Go (regex-based, deterministic, stdlib-only scanner). Pair with the
+# ground-truth static analyzers (go vet / staticcheck / gosec) where available.
+language: go
+patterns:
+  - id: sql_sprintf
+    category: injection
+    cwe: CWE-89
+    severity: high
+    any:
+      - 'fmt\.Sprintf\([^)]*(SELECT|INSERT|UPDATE|DELETE|FROM|WHERE)'
+      - '(Query|QueryRow|Exec|QueryContext|ExecContext)\([^)]*\+[^)]*\)'
+    rationale: SQL assembled by string formatting/concatenation instead of parameter placeholders.
+    refute: Is the interpolated value a constant/enum, or attacker-controlled? Are parameters ($1/?) used? If every interpolated value is a compile-time constant, refute.
+
+  - id: command_injection
+    category: injection
+    cwe: CWE-78
+    severity: high
+    any:
+      - 'exec\.Command(Context)?\([^)]*\+[^)]*\)'          # string concatenation into the command
+      - '"(sh|bash|zsh|cmd)"\s*,\s*"(-c|/c)"'                # shell interpreter invocation
+      - 'exec\.Command(Context)?\([^)]*\b(r|req|request|c)\.\w'  # request value passed straight in
+    rationale: External process spawned via a shell, string concatenation, or a request-derived value.
+    refute: Is any arg attacker-controlled and unquoted? The argument-separated form exec.Command(bin, args...) with a fixed binary and non-shell args is SAFE — refute. Only shell -c, concatenation, or raw request input confirms.
+
+  - id: grpc_insecure
+    category: transport
+    cwe: CWE-319
+    severity: medium
+    any:
+      - 'grpc\.WithInsecure\(\)'
+      - 'insecure\.NewCredentials\(\)'
+    rationale: gRPC channel with no transport encryption.
+    refute: Is this intra-mesh traffic with mTLS terminated by a sidecar/ingress, or a localhost/test dial? If TLS is enforced at another layer, downgrade; if it crosses a trust boundary in the clear, confirm.
+
+  - id: tls_insecure_skip
+    category: transport
+    cwe: CWE-295
+    severity: high
+    any:
+      - 'InsecureSkipVerify:\s*true'
+    rationale: TLS certificate verification disabled.
+    refute: Is this a test/dev-only path guarded by a flag/env, or does it run in production? Production => confirm.
+
+  - id: hardcoded_secret
+    category: secrets
+    cwe: CWE-798
+    severity: high
+    any:
+      - '(?i)(password|passwd|secret|api[_-]?key|token|private[_-]?key)\s*[:=]\s*"[^"]{6,}"'
+    rationale: Credential-shaped literal embedded in source.
+    refute: Is the value a test fixture, an obvious placeholder ("changeme", "example"), or a real credential? Fixtures in _test.go / seed files are lower severity; real production secrets => confirm.
+
+  - id: weak_crypto
+    category: crypto
+    cwe: CWE-327
+    severity: medium
+    any:
+      - '"crypto/md5"'
+      - '"crypto/sha1"'
+      - '"crypto/des"'
+      - '"crypto/rc4"'
+    rationale: Weak/broken cryptographic primitive imported.
+    refute: Is it used for a non-security purpose (checksum, cache key, ETag)? Then downgrade. Password hashing / signatures / tokens with these => confirm.
+
+  - id: insecure_rand
+    category: crypto
+    cwe: CWE-338
+    severity: medium
+    any:
+      - '"math/rand"'
+      - '"math/rand/v2"'
+    rationale: Non-cryptographic RNG; unsafe for tokens/secrets/nonces if security-relevant.
+    refute: Is the randomness used for a token/session/nonce/password (=> confirm, must be crypto/rand) or for jitter/sampling/shuffling (=> refute)?
+
+  - id: path_traversal
+    category: path
+    cwe: CWE-22
+    severity: high
+    any:
+      - '(os\.Open|os\.ReadFile|ioutil\.ReadFile|os\.Create)\([^)]*(r\.|req\.|param|input|name|path)[^)]*\)'
+      - 'filepath\.Join\([^)]*(r\.|req\.|param|input|user)'
+    rationale: Filesystem path built from request/user input without containment.
+    refute: Is the input constrained to a whitelist / cleaned with filepath.Clean and checked against a base dir? If contained, refute; if raw user input reaches Open, confirm.
+
+  - id: missing_authz
+    category: authz
+    cwe: CWE-862
+    severity: medium
+    any:
+      - '(?i)//\s*(TODO|FIXME).{0,40}(auth|permission|access|role)'
+      - '(?i)//\s*no\s+auth'
+    rationale: Comment marker suggesting missing/incomplete authorization.
+    refute: Is there an auth check elsewhere in the handler chain (middleware)? Marker without a real gap => refute.
+
+  - id: unsafe_deserialize
+    category: deserialization
+    cwe: CWE-502
+    severity: medium
+    any:
+      - 'gob\.NewDecoder\('
+      - '(json|yaml)\.Unmarshal\([^)]*interface\{\}'
+    rationale: Decoding untrusted data, possibly into dynamic types.
+    refute: Is the source trusted (internal, signed) and the target a concrete struct with validation? Untrusted input into interface{}/gob => confirm.
+
+  - id: ignored_error_security
+    category: error-handling
+    cwe: CWE-703
+    severity: medium
+    any:
+      # Only SECURITY-DECISION calls whose error is dropped — NOT defer Close()/Write(),
+      # which is idiomatic resource hygiene and pure noise for a security audit.
+      - '(Verify|Authenticate|Authorize|Decrypt|CheckPassword|CompareHashAndPassword|ValidateToken)\w*\([^)]*\)\s*$'
+      - '_\s*,?\s*_?\s*[:=]{1,2}\s*[A-Za-z_.]*(Verify|Authent|Authoriz|Decrypt|ValidateToken|CompareHashAndPassword)\w*\('
+    rationale: Error/return of a security-DECISION call (auth/verify/decrypt) is discarded, so a failed check may pass silently.
+    refute: Does the dropped result actually gate access (auth/verify/decrypt)? A best-effort Close/Write is out of scope. Only a swallowed security decision confirms.
+
+  - id: sensitive_logging
+    category: logging
+    cwe: CWE-532
+    severity: low
+    any:
+      - '(?i)(log|print|fmt)\w*\([^)]*(password|secret|token|api[_-]?key|authorization)'
+    rationale: Possible secret written to logs.
+    refute: Is the logged value redacted/masked, or the literal string a field name only? Actual secret value logged => confirm.
+
+  # --- Detectors below cover config/transport weaknesses that gosec's type-aware
+  # --- rules largely miss (validated by calibration on the bakery-go pilot). This is
+  # --- the taxonomy's value-add; pair with gosec for the type-dependent classes.
+  - id: cors_wildcard
+    category: transport
+    cwe: CWE-942
+    severity: medium
+    any:
+      - '(?i)(AllowedOrigins|AllowOrigins|Access-Control-Allow-Origin)\s*[:=].*(\*|"\*")'
+      - '(?i)Access-Control-Allow-Origin"?\s*,\s*"\*"'
+    rationale: CORS allows any origin (wildcard), enabling cross-origin credential/data theft.
+    refute: Is the endpoint public and unauthenticated (then wildcard may be fine), or does it serve authenticated user data with credentials? Wildcard + credentials => confirm.
+
+  - id: insecure_cookie
+    category: transport
+    cwe: CWE-614
+    severity: medium
+    any:
+      - '(?i)Secure:\s*false'
+      - '(?i)HttpOnly:\s*false'
+    rationale: Session/auth cookie set without Secure/HttpOnly, exposing it to interception or XSS theft.
+    refute: Is this a non-sensitive cookie (locale, theme) or a session/auth token? Auth cookie without Secure+HttpOnly => confirm.
+
+  - id: debug_endpoint
+    category: exposure
+    cwe: CWE-489
+    severity: medium
+    any:
+      - '_\s+"net/http/pprof"'
+      - '"net/http/pprof"'
+      - '(?i)(gin\.SetMode\(gin\.DebugMode\)|pprof\.Register|expvar\.Handler)'
+    rationale: Profiling/debug endpoints (pprof, expvar) exposed, leaking internals or enabling DoS.
+    refute: Is pprof bound to localhost/an admin port behind auth, or on the public listener? Public/unauthenticated => confirm.

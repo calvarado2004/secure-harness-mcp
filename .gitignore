@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.harness-mod/
+.venv/
+venv/
+.env
+*.log

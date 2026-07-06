@@ -1,0 +1,18 @@
+# Always-on secure-coding harness proxy. `docker compose up -d`, then point any OpenAI-compatible
+# client at http://localhost:8090/v1 to get harness-hardened code automatically. Set the model
+# backend in .env (copy .env.example).
+services:
+  secure-proxy:
+    build: .
+    image: secure-harness-mcp:latest
+    container_name: secure-harness-proxy
+    ports:
+      - "8090:8090"
+    environment:
+      SECURE_PROXY_HOST: "0.0.0.0"
+      SECURE_PROXY_UPSTREAM: "${SECURE_PROXY_UPSTREAM:-http://host.docker.internal:8080/v1}"
+      SECURE_PROXY_KEY: "${SECURE_PROXY_KEY:-dummy}"
+      SECURE_PROXY_MAX_ITERS: "${SECURE_PROXY_MAX_ITERS:-2}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: always
