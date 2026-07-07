@@ -34,6 +34,63 @@ trap — only the feedback loop delivers both security and buildability.**
 fronts any model; every completion containing code is run through the loop automatically, so *any*
 client pointed at it is hardened with no client change.
 
+## Architecture
+
+Two entry points — the **MCP server** (explicit tools) and the **transparent proxy** (implicit, on
+every completion) — share one **verify-and-repair core** (`generate.py`), which drives a model backend
+and gates its output on **self-tested instruments** before returning it.
+
+```mermaid
+flowchart TD
+    C1["Qwen Code"] -->|stdio MCP| MCP
+    C2["Claude Code"] -->|stdio MCP| MCP
+    C3["Cursor / any MCP client"] -->|stdio MCP| MCP
+    C4["curl / editor / any agent"] -->|HTTP /v1| PROXY
+
+    MCP["MCP server — secure_coding_mcp.py<br/>tools: secure_generate · harden_code · audit_code · score_code"]
+    PROXY["Transparent proxy — secure_proxy.py<br/>OpenAI-compatible /v1 · hardens every code block"]
+
+    MCP --> GEN
+    PROXY --> GEN
+
+    subgraph loop["Verify-and-repair core · generate.py"]
+        direction TB
+        GEN["generate · model_chat"] --> EXT["extract code block"]
+        EXT --> SCAN["build + scan"]
+        SCAN --> DEC{"builds clean<br/>and no findings?"}
+        DEC -->|"no — feed each error / finding back (≤ N iters)"| GEN
+    end
+
+    DEC -->|yes / fast path| OUT["hardened code<br/>+ honest residual note"]
+    OUT -.->|returned to caller| C4
+
+    GEN <-->|OpenAI API| BE["Model backend<br/>vLLM · Ollama · llama.cpp · hosted<br/>SECURE_HARNESS_MODEL_URL"]
+
+    subgraph instr["Self-tested instruments — +/- controls, documented FP quarantine"]
+        direction TB
+        I1["go build / go vet"]
+        I2["gosec"]
+        I3["bandit — advisory subprocess FPs quarantined; shell=True still blocks"]
+        I4["pattern detectors · vuln_patterns.yaml"]
+    end
+
+    SCAN --> I1
+    SCAN --> I2
+    SCAN --> I3
+    SCAN --> I4
+
+    AUD["scan_repo.py — shard + refute repo audit"] --> I4
+```
+
+**How to read it.** A request enters through either the MCP tools or the proxy and lands in the same
+loop: generate → extract → *build and scan* → if the code fails to compile or trips a detector, feed
+the specific errors and findings back and regenerate (up to `N` iterations); otherwise return it with
+an honest residual note. Code that is already clean takes the **fast path** — zero extra model calls,
+so cost is proportional to risk. Every gate is a **self-tested instrument**: a known-insecure snippet
+must score worse than its secure twin and a broken snippet must fail to build, so a reported "0
+findings" means *the instrument looked and found nothing*. `scan_repo.py` reuses the same pattern
+detectors to audit an existing repository.
+
 ## How the loop works
 
 ```
@@ -185,6 +242,12 @@ risk); risky code is repaired and returned with an honest residual note.
 
 An agent that writes code can call `harden_code` on its *own* output before returning it — the research
 result as a runtime safety layer.
+
+## Deep dive
+
+See [`docs/TECHNICAL.md`](docs/TECHNICAL.md) for the full technical reference: the repair algorithm,
+every instrument and detector, the self-tests and false-positive quarantine, the MCP/proxy API
+surfaces, configuration, the measured findings, and an honest limitations section.
 
 ## Honest caveats
 
