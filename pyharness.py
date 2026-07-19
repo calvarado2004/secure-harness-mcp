@@ -53,17 +53,22 @@ def py_build_scan(code):
     return compiles, cerr, findings, weighted
 
 
-def repair(system, task, code, iters):
+def repair(system, task, code, iters, mode="full"):
+    """mode: 'full' feeds compile errors + findings; 'build' only compile errors
+    (component ablation: is the compiler enough?); 'scan' only findings."""
     for _ in range(iters):
         ok, cerr, findings, _w = py_build_scan(code)
-        if ok and not findings:
+        done = {"full": ok and not findings, "build": ok, "scan": not findings}[mode]
+        if done:
             break
         probs = []
-        if not ok:
+        if not ok and mode in ("full", "build"):
             probs.append(f"It does not compile:\n{cerr}")
-        if findings:
+        if findings and mode in ("full", "scan"):
             probs.append("bandit flagged:\n" + "\n".join(
                 f"{f['severity']} {f['test']} ({f['cwe']}) line {f['line']}: {f['why']}" for f in findings))
+        if not probs:
+            break
         fix = (f"{task}\n\nYour previous solution had problems:\n" + "\n".join(probs)
                + "\n\nReturn a corrected version that compiles and resolves every issue. "
                "Output only Python code in one ```python block.")
@@ -109,6 +114,7 @@ def main():
     ap.add_argument("--temperature", type=float, default=0.6)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--out", default=str(HERE / "out_py"))
+    ap.add_argument("--raw-dir", default="", help="save each generated program as <condition>/<task>_<i>.py")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
 
@@ -122,17 +128,22 @@ def main():
     out = pathlib.Path(args.out); out.mkdir(parents=True, exist_ok=True)
     print(f"model={gen.MODEL} tag={args.model_tag} tasks={len(tasks)} conditions={conditions}")
     rows = []
+    repair_modes = {"guided_repair": "full", "guided_repair_build": "build", "guided_repair_scan": "scan"}
     for cond in conditions:
         system = BASELINE_SYS if cond == "baseline" else PY_SECURE_SYS
         for t in tasks:
             for i in range(args.samples_per_task):
                 try:
                     code = gen.extract_code(gen.model_chat(system, t["prompt"], temperature=args.temperature))
-                    if cond == "guided_repair":
-                        code = repair(system, t["prompt"], code, args.repair_iters)
+                    if cond in repair_modes:
+                        code = repair(system, t["prompt"], code, args.repair_iters, repair_modes[cond])
                     ok, _cerr, findings, weighted = py_build_scan(code)
                 except Exception as e:  # noqa: BLE001
-                    ok, findings, weighted = False, [], 0
+                    code, ok, findings, weighted = "", False, [], 0
+                if args.raw_dir:
+                    d = pathlib.Path(args.raw_dir) / cond
+                    d.mkdir(parents=True, exist_ok=True)
+                    (d / f"{t['id']}_{i}.py").write_text(code)
                 rows.append({"model": args.model_tag, "condition": cond, "task": t["id"],
                              "compiles": ok, "weighted": weighted, "n_findings": len(findings),
                              "cwe": t["id"].split("_")[0]})
