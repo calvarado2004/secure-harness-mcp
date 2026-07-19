@@ -15,6 +15,7 @@ Usage:
 """
 import argparse
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -53,14 +54,53 @@ def py_build_scan(code):
     return compiles, cerr, findings, weighted
 
 
-def repair(system, task, code, iters, mode="full", trace=None):
+SEMGREP_BIN = os.environ.get("SEMGREP_BIN", "semgrep")
+SEMGREP_PACKS = ["p/security-audit", "p/owasp-top-ten", "r/python.lang.security"]
+SEMGREP_SEV = {"ERROR": "HIGH", "WARNING": "MEDIUM", "INFO": "LOW"}
+
+
+def semgrep_scan(code):
+    """Held-in second oracle for --multi-oracle repair. Audit-class rules (*-audit)
+    are quarantined from feedback/gating, mirroring the bandit advisory quarantine."""
+    with tempfile.TemporaryDirectory(prefix="py-sg-") as tmp:
+        f = pathlib.Path(tmp) / "snippet.py"
+        f.write_text(code)
+        cmd = [SEMGREP_BIN, "scan", "--metrics=off", "--quiet", "--json", str(f)]
+        for p in SEMGREP_PACKS:
+            cmd[2:2] = ["--config", p]
+        try:
+            out = subprocess.run(cmd, capture_output=True, encoding="utf-8",
+                                 errors="replace", timeout=120)
+            findings = []
+            for r in json.loads(out.stdout or "{}").get("results", []):
+                rule = r["check_id"].split(".")[-1]
+                if rule.endswith("-audit"):
+                    continue
+                sev = SEMGREP_SEV.get(r.get("extra", {}).get("severity", "INFO"), "LOW")
+                findings.append({"test": "semgrep:" + rule, "severity": sev, "cwe": "",
+                                 "line": r["start"]["line"],
+                                 "why": r.get("extra", {}).get("message", "")[:80]})
+            return findings
+        except Exception:  # noqa: BLE001
+            return []
+
+
+def build_scan_multi(code):
+    """bandit + semgrep union: same shape as py_build_scan."""
+    ok, cerr, findings, w = py_build_scan(code)
+    sg = semgrep_scan(code)
+    return ok, cerr, findings + sg, w + sum(SEV_W.get(f["severity"], 1) for f in sg)
+
+
+def repair(system, task, code, iters, mode="full", trace=None, scan=py_build_scan):
     """mode: 'full' feeds compile errors + findings; 'build' only compile errors
     (component ablation: is the compiler enough?); 'scan' only findings.
     trace (optional list): appends {iter, compiles, weighted, n_findings, converged}
-    per iteration — iter 0 is the initial generation — for convergence curves."""
+    per iteration — iter 0 is the initial generation — for convergence curves.
+    scan: the oracle the loop closes over (py_build_scan or build_scan_multi)."""
     unscored = False
     for it in range(iters):
-        ok, cerr, findings, w = py_build_scan(code)
+        ok, cerr, findings, w = scan(code)
         done = {"full": ok and not findings, "build": ok, "scan": not findings}[mode]
         if trace is not None:
             trace.append({"iter": it, "compiles": ok, "weighted": w,
@@ -72,7 +112,7 @@ def repair(system, task, code, iters, mode="full", trace=None):
         if not ok and mode in ("full", "build"):
             probs.append(f"It does not compile:\n{cerr}")
         if findings and mode in ("full", "scan"):
-            probs.append("bandit flagged:\n" + "\n".join(
+            probs.append("static analysis flagged:\n" + "\n".join(
                 f"{f['severity']} {f['test']} ({f['cwe']}) line {f['line']}: {f['why']}" for f in findings))
         if not probs:
             break
@@ -82,7 +122,7 @@ def repair(system, task, code, iters, mode="full", trace=None):
         code = gen.extract_code(gen.model_chat(system, fix, temperature=0.2))
         unscored = True
     if trace is not None and unscored:
-        ok, _cerr, findings, w = py_build_scan(code)
+        ok, _cerr, findings, w = scan(code)
         trace.append({"iter": len(trace), "compiles": ok, "weighted": w,
                       "n_findings": len(findings),
                       "converged": bool(ok and not findings)})
@@ -130,6 +170,8 @@ def main():
     ap.add_argument("--raw-dir", default="", help="save each generated program as <condition>/<task>_<i>.py")
     ap.add_argument("--trace-file", default="", help="append per-iteration repair scores (jsonl) for convergence curves")
     ap.add_argument("--guidelines", default="", help="CWE->guidelines json; enables guided_rag / guided_rag_repair conditions")
+    ap.add_argument("--multi-oracle", action="store_true",
+                    help="repair loop closes over bandit+semgrep (scoring stays bandit-only)")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
 
@@ -161,7 +203,8 @@ def main():
                     trace = [] if args.trace_file and cond in repair_modes else None
                     if cond in repair_modes:
                         code = repair(system, prompt, code, args.repair_iters,
-                                      repair_modes[cond], trace=trace)
+                                      repair_modes[cond], trace=trace,
+                                      scan=build_scan_multi if args.multi_oracle else py_build_scan)
                     if trace:
                         with open(args.trace_file, "a") as tf:
                             for row in trace:
