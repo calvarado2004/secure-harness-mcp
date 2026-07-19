@@ -63,8 +63,11 @@ def model_chat(system, user, max_tokens=1200, temperature=0.4):
 def extract_code(text):
     m = re.search(r"```(?:go|golang)?[^\n]*\n(.*?)```", text, re.DOTALL)
     code = m.group(1) if m else text
-    lines = [ln for ln in code.splitlines() if ln.strip() not in ("```", "```go", "```golang")]
-    if lines and lines[0].strip().lower() in ("go", "golang"):
+    lines = [ln for ln in code.splitlines()
+             if ln.strip() not in ("```", "```go", "```golang", "```python", "```py")]
+    # Diffusion models sometimes split the fence across lines ("```\npython\n...");
+    # the backticks are filtered above, so a bare language tag can survive as line 1.
+    if lines and lines[0].strip().lower() in ("go", "golang", "python", "py"):
         lines = lines[1:]
     return "\n".join(lines).strip() + "\n"
 

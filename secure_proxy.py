@@ -255,6 +255,8 @@ def self_test():
         ("py: safe subprocess passes (advisories quarantined)", len(ss[2]) == 0),
         ("py: shell=True injection still blocks (TP kept)", len(inj[2]) > 0),
         ("splice targets a fenced block", FENCE.search("x\n```go\n" + SECURE_GO + "```\n") is not None),
+        ("extract drops split-fence language tag", not gen.extract_code(
+            "```\npython\nimport os\n").startswith("python")),
     ]
     ok = all(p for _d, p in checks)
     for d, p in checks:
