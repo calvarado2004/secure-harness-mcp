@@ -53,12 +53,19 @@ def py_build_scan(code):
     return compiles, cerr, findings, weighted
 
 
-def repair(system, task, code, iters, mode="full"):
+def repair(system, task, code, iters, mode="full", trace=None):
     """mode: 'full' feeds compile errors + findings; 'build' only compile errors
-    (component ablation: is the compiler enough?); 'scan' only findings."""
-    for _ in range(iters):
-        ok, cerr, findings, _w = py_build_scan(code)
+    (component ablation: is the compiler enough?); 'scan' only findings.
+    trace (optional list): appends {iter, compiles, weighted, n_findings, converged}
+    per iteration — iter 0 is the initial generation — for convergence curves."""
+    unscored = False
+    for it in range(iters):
+        ok, cerr, findings, w = py_build_scan(code)
         done = {"full": ok and not findings, "build": ok, "scan": not findings}[mode]
+        if trace is not None:
+            trace.append({"iter": it, "compiles": ok, "weighted": w,
+                          "n_findings": len(findings), "converged": done})
+        unscored = False
         if done:
             break
         probs = []
@@ -73,6 +80,12 @@ def repair(system, task, code, iters, mode="full"):
                + "\n\nReturn a corrected version that compiles and resolves every issue. "
                "Output only Python code in one ```python block.")
         code = gen.extract_code(gen.model_chat(system, fix, temperature=0.2))
+        unscored = True
+    if trace is not None and unscored:
+        ok, _cerr, findings, w = py_build_scan(code)
+        trace.append({"iter": len(trace), "compiles": ok, "weighted": w,
+                      "n_findings": len(findings),
+                      "converged": bool(ok and not findings)})
     return code
 
 
@@ -115,6 +128,8 @@ def main():
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--out", default=str(HERE / "out_py"))
     ap.add_argument("--raw-dir", default="", help="save each generated program as <condition>/<task>_<i>.py")
+    ap.add_argument("--trace-file", default="", help="append per-iteration repair scores (jsonl) for convergence curves")
+    ap.add_argument("--guidelines", default="", help="CWE->guidelines json; enables guided_rag / guided_rag_repair conditions")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
 
@@ -128,15 +143,30 @@ def main():
     out = pathlib.Path(args.out); out.mkdir(parents=True, exist_ok=True)
     print(f"model={gen.MODEL} tag={args.model_tag} tasks={len(tasks)} conditions={conditions}")
     rows = []
-    repair_modes = {"guided_repair": "full", "guided_repair_build": "build", "guided_repair_scan": "scan"}
+    repair_modes = {"guided_repair": "full", "guided_repair_build": "build",
+                    "guided_repair_scan": "scan", "guided_rag_repair": "full"}
+    guidelines = json.loads(pathlib.Path(args.guidelines).read_text()) if args.guidelines else {}
     for cond in conditions:
         system = BASELINE_SYS if cond == "baseline" else PY_SECURE_SYS
         for t in tasks:
+            prompt = t["prompt"]
+            if cond.startswith("guided_rag"):
+                g = guidelines.get(t["id"].split("_")[0])
+                if g:
+                    prompt += ("\n\nRelevant secure-coding guidelines (" + g["name"] + "):\n"
+                               + "\n".join("- " + x for x in g["guidelines"]))
             for i in range(args.samples_per_task):
                 try:
-                    code = gen.extract_code(gen.model_chat(system, t["prompt"], temperature=args.temperature))
+                    code = gen.extract_code(gen.model_chat(system, prompt, temperature=args.temperature))
+                    trace = [] if args.trace_file and cond in repair_modes else None
                     if cond in repair_modes:
-                        code = repair(system, t["prompt"], code, args.repair_iters, repair_modes[cond])
+                        code = repair(system, prompt, code, args.repair_iters,
+                                      repair_modes[cond], trace=trace)
+                    if trace:
+                        with open(args.trace_file, "a") as tf:
+                            for row in trace:
+                                tf.write(json.dumps({"model": args.model_tag, "condition": cond,
+                                                     "task": t["id"], "sample": i, **row}) + "\n")
                     ok, _cerr, findings, weighted = py_build_scan(code)
                 except Exception as e:  # noqa: BLE001
                     code, ok, findings, weighted = "", False, [], 0
