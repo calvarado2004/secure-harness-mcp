@@ -194,10 +194,21 @@ def main():
     conditions = [c.strip() for c in args.conditions.split(",") if c.strip()]
     out = pathlib.Path(args.out); out.mkdir(parents=True, exist_ok=True)
     print(f"model={gen.MODEL} tag={args.model_tag} tasks={len(tasks)} conditions={conditions}")
-    rows = []
     repair_modes = {"guided_repair": "full", "guided_repair_build": "build",
                     "guided_repair_scan": "scan", "guided_rag_repair": "full"}
     guidelines = json.loads(pathlib.Path(args.guidelines).read_text()) if args.guidelines else {}
+
+    # Resume support: scores are appended per-sample; a re-run skips (cond,task,sample)
+    # already on disk. Long runs survive interruption without losing work.
+    scorepath = out / f"pyscores-{args.model_tag}.jsonl"
+    rows, done = [], set()
+    if scorepath.exists():
+        for line in scorepath.read_text().splitlines():
+            if line.strip():
+                r = json.loads(line); rows.append(r)
+                done.add((r["condition"], r["task"], r["sample"]))
+        print(f"resuming: {len(done)} samples already scored")
+    sfile = open(scorepath, "a")
     for cond in conditions:
         system = BASELINE_SYS if cond == "baseline" else PY_SECURE_SYS
         for t in tasks:
@@ -208,6 +219,8 @@ def main():
                     prompt += ("\n\nRelevant secure-coding guidelines (" + g["name"] + "):\n"
                                + "\n".join("- " + x for x in g["guidelines"]))
             for i in range(args.samples_per_task):
+                if (cond, t["id"], i) in done:
+                    continue
                 try:
                     code = gen.extract_code(gen.model_chat(system, prompt, temperature=args.temperature, max_tokens=MAXTOK))
                     trace = [] if args.trace_file and cond in repair_modes else None
@@ -227,13 +240,14 @@ def main():
                     d = pathlib.Path(args.raw_dir) / cond
                     d.mkdir(parents=True, exist_ok=True)
                     (d / f"{t['id']}_{i}.py").write_text(code)
-                rows.append({"model": args.model_tag, "condition": cond, "task": t["id"],
-                             "compiles": ok, "weighted": weighted, "n_findings": len(findings),
-                             "cwe": t["id"].split("_")[0]})
+                rec = {"model": args.model_tag, "condition": cond, "task": t["id"], "sample": i,
+                       "compiles": ok, "weighted": weighted, "n_findings": len(findings),
+                       "cwe": t["id"].split("_")[0]}
+                rows.append(rec)
+                sfile.write(json.dumps(rec) + "\n"); sfile.flush()
             print(f"  [{cond}] {t['id']}", flush=True)
-
-    (out / f"pyscores-{args.model_tag}.jsonl").write_text(
-        "".join(json.dumps(r) + "\n" for r in rows))
+    sfile.close()
+    # scores already persisted incrementally to pyscores-<tag>.jsonl (resume-safe).
     # aggregate
     agg = {}
     for r in rows:
