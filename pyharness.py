@@ -140,7 +140,11 @@ def load_securityeval(path, limit):
     for line in pathlib.Path(path).read_text().splitlines():
         if line.strip():
             r = json.loads(line)
-            tasks.append({"id": r["ID"].replace(".py", ""),
+            tid = r["ID"].replace(".py", "")
+            # authoritative CWE from the benchmark if present; else the id prefix
+            # (SecurityEval ids are CWE-tagged, but SALLM/LLMSecEval ids are not).
+            cwe = r.get("cwe") or tid.split("_")[0]
+            tasks.append({"id": tid, "cwe": cwe,
                           "prompt": "Complete the following Python code:\n\n" + r["Prompt"]})
     return tasks[:limit] if limit else tasks
 
@@ -214,7 +218,7 @@ def main():
         for t in tasks:
             prompt = t["prompt"]
             if cond.startswith("guided_rag"):
-                g = guidelines.get(t["id"].split("_")[0])
+                g = guidelines.get(t.get("cwe", t["id"].split("_")[0]))
                 if g:
                     prompt += ("\n\nRelevant secure-coding guidelines (" + g["name"] + "):\n"
                                + "\n".join("- " + x for x in g["guidelines"]))
@@ -242,7 +246,7 @@ def main():
                     (d / f"{t['id']}_{i}.py").write_text(code)
                 rec = {"model": args.model_tag, "condition": cond, "task": t["id"], "sample": i,
                        "compiles": ok, "weighted": weighted, "n_findings": len(findings),
-                       "cwe": t["id"].split("_")[0]}
+                       "cwe": t.get("cwe", t["id"].split("_")[0])}
                 rows.append(rec)
                 sfile.write(json.dumps(rec) + "\n"); sfile.flush()
             print(f"  [{cond}] {t['id']}", flush=True)
