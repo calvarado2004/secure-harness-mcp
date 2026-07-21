@@ -27,6 +27,7 @@ import generate as gen  # model_chat, extract_code  # noqa: E402
 
 PY_SECURE_SYS = (HERE / "py_secure_prompt.txt").read_text()
 MAXTOK = 4096  # generation token budget; raise for reasoning models (Kimi et al.)
+FOCUSED = False  # curated single-finding feedback (test: does less info help small models?)
 BASELINE_SYS = ("You are a Python engineer. Complete the requested function. "
                 "Output only Python code in one ```python block, no prose.")
 SEV_W = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
@@ -118,12 +119,21 @@ def repair(system, task, code, iters, mode="full", trace=None, scan=py_build_sca
         if not ok and mode in ("full", "build"):
             probs.append(f"It does not compile:\n{cerr}")
         if findings and mode in ("full", "scan"):
-            probs.append("static analysis flagged:\n" + "\n".join(
-                f"{f['severity']} {f['test']} ({f['cwe']}) line {f['line']}: {f['why']}" for f in findings))
+            if FOCUSED:
+                # Curated feedback for capacity-limited models: the single
+                # highest-severity finding only, as one actionable instruction.
+                top = max(findings, key=lambda f: SEV_W.get(f["severity"], 1))
+                probs.append(f"Fix this one security issue on line {top['line']}: "
+                             f"{top['why']} Rewrite that part so the weakness is gone.")
+            else:
+                probs.append("static analysis flagged:\n" + "\n".join(
+                    f"{f['severity']} {f['test']} ({f['cwe']}) line {f['line']}: {f['why']}"
+                    for f in findings))
         if not probs:
             break
         fix = (f"{task}\n\nYour previous solution had problems:\n" + "\n".join(probs)
-               + "\n\nReturn a corrected version that compiles and resolves every issue. "
+               + "\n\nFix only these issues and any compile error; do NOT add functionality, features, or code beyond what the task specifies and these fixes require. "
+               "Return a corrected version that compiles and resolves every issue. "
                "Output only Python code in one ```python block.")
         code = gen.extract_code(gen.model_chat(system, fix, temperature=0.2, max_tokens=MAXTOK))
         unscored = True
@@ -182,12 +192,15 @@ def main():
     ap.add_argument("--guidelines", default="", help="CWE->guidelines json; enables guided_rag / guided_rag_repair conditions")
     ap.add_argument("--multi-oracle", action="store_true",
                     help="repair loop closes over bandit+semgrep (scoring stays bandit-only)")
+    ap.add_argument("--focused", action="store_true",
+                    help="curated single-finding repair feedback (capacity-limited models)")
     ap.add_argument("--max-tokens", type=int, default=4096,
                     help="generation token budget; raise for reasoning models (e.g. 8192 for Kimi)")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
-    global MAXTOK
+    global MAXTOK, FOCUSED
     MAXTOK = args.max_tokens
+    FOCUSED = args.focused
 
     if args.self_test:
         raise SystemExit(0 if self_test() else 1)
