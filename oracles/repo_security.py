@@ -37,6 +37,7 @@ import repo_authz  # noqa: E402
 import repo_compose  # noqa: E402
 import repo_fastapi  # noqa: E402
 import repo_nginx  # noqa: E402
+import repo_seed  # noqa: E402
 import repo_storage  # noqa: E402
 import repo_practice  # noqa: E402
 
@@ -289,7 +290,7 @@ def scan_codeql(root, codeql="codeql"):
 
 def assess_repo(root, use_codeql=True, use_frontend=True, use_authz=True,
                 use_practice=True, use_fastapi=True, use_nginx=True,
-                use_storage=True, use_compose=True,
+                use_storage=True, use_compose=True, use_seed=True,
                 public_routes=None, published_services=None):
     """The repository's security state, with every lane's status recorded.
 
@@ -349,6 +350,12 @@ def assess_repo(root, use_codeql=True, use_frontend=True, use_authz=True,
         st, bad = repo_storage.scan_storage(root)
         lanes["storage"] = st is not None
         findings += st or []
+
+    if use_seed:
+        sp, bad = repo_seed.scan_python(root)
+        sq, bad2 = repo_seed.scan_sql_tree(root)
+        lanes["seed"] = sp is not None and sq is not None
+        findings += (sp or []) + (sq or [])
 
     if use_compose:
         co, bad = repo_compose.scan_tree(root, declared_published=published_services)
@@ -478,9 +485,10 @@ if __name__ == "__main__":
     a = assess_repo(target, use_codeql="--codeql" in sys.argv,
                     use_fastapi=not gen2, use_nginx=not gen2,
                     use_storage=not gen2, use_compose=not gen2,
+                    use_seed=not gen2,
                     public_routes=routes, published_services=published)
     gen = ("gen2 (study-2 corpus lane set)" if gen2
-           else "gen3 (+fastapi, +nginx, +storage, +compose)")
+           else "gen3 (+fastapi, +nginx, +storage, +compose, +seed)")
     print(f"generation: {gen}   public_routes: "
           f"{'declared' if routes else 'UNAVAILABLE (introspection rule skipped)'}")
     print(f"lanes: {a['lanes']}  analyzable: {a['analyzable']}  weighted: {a['weighted']}  "

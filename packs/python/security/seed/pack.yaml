@@ -1,0 +1,29 @@
+id: python/security/seed
+version: 1
+tier: commodity
+runtime: python
+axis: security
+description: Python bootstrap scripts — the other half of the seeded-credential concern.
+
+# Binds the rule declared in packs/general/security rather than declaring its own, so a
+# repository that seeds an administrator in Python and in SQL scores ONE defect with ONE
+# weight instead of two under different names.
+
+binds:
+  - seed/default-admin-credential
+
+lanes:
+  seed_python: {engine: internal_ast, detector: repo_seed.scan_python, input: tree}
+
+controls:
+  positive:
+    - file: controls/positive/seeded
+      must_flag: [seed/default-admin-credential]
+  negative:
+    - file: controls/negative/bootstrapped
+      must_not_flag: [seed/default-admin-credential]
+      covers:
+        - "a bootstrap admin whose password comes from the environment is the FIX"
+        - "an unprivileged demo account with a literal password is a different concern"
+
+limits: LIMITS.md

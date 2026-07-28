@@ -429,16 +429,16 @@ def routing():
           and P.for_runtime("python").severity == P.for_runtime("browser-js").severity)
 
     if subject_present:
-        # `sql`, not `container`: container graduated from detect-only to a real lane, so
-        # asserting it is UNREAD stopped being true. Pinning a control to whichever runtime
-        # happens to be unimplemented today is how a control silently changes meaning --
-        # the assertion is that an unimplemented runtime IS REPORTED, not which one it is.
+        # THIRD REWRITE OF THIS CONTROL, and the last one, because it is finally pinned to
+        # the property instead of to an example. It asserted "container is UNREAD", then
+        # "sql is UNREAD", and each stopped being true the moment that runtime gained a
+        # lane. On this subject every runtime is now read, so there is no example left to
+        # point at -- which is a result, not a failure, and a control that reported red for
+        # it would be punishing the work. The unread MECHANISM is pinned synthetically
+        # below; here the assertion is the true one: nothing in this repository is unread.
         unread = sorted(inv.unread)
-        check("a runtime with NO lanes is reported UNREAD, not clean",
-              "sql" in unread, f"unread: {unread}")
-        check("...and a runtime that HAS gained a lane is no longer reported unread",
-              "container" not in unread,
-              "container was detect-only and now reads compose")
+        check("every runtime present in the subject now has a lane that reads it",
+              unread == [], f"unread: {unread or 'none'}")
         check("a file no runtime claims is reported as a blind spot",
               any(f.endswith(".sql") for f in inv.unclaimed) or "sql" in inv.by_runtime,
               f"unclaimed: {inv.unclaimed}")
@@ -457,6 +457,14 @@ def routing():
     # meaning when a new runtime starts claiming the file it used to be written around --
     # which is exactly what just happened to its first version, and a control whose meaning
     # drifts is worse than no control because it still reports green.
+    # The UNREAD mechanism, pinned to the property: a runtime whose files are claimed but
+    # for which no lane is loaded must be reported, whichever runtime that happens to be.
+    inv_synth = _detect_inventory_for_unread_test()
+    check("a runtime with NO lanes loaded is reported UNREAD, not clean",
+          "toy" in inv_synth.unread, f"unread: {sorted(inv_synth.unread)}")
+    check("...and a runtime WITH a lane is not reported unread",
+          "real" not in inv_synth.unread)
+
     with tempfile.TemporaryDirectory() as td:
         open(os.path.join(td, "haproxy.cfg"), "w").write("frontend f\n")
         open(os.path.join(td, "photo.jpg"), "wb").write(b"\xff\xd8\xff")
@@ -467,6 +475,17 @@ def routing():
               "haproxy.cfg" in synth.unclaimed, f"unclaimed: {sorted(synth.unclaimed)}")
         check("...while binary assets and prose are not reported as blind spots",
               not {"photo.jpg", "NOTES.md"} & set(synth.unclaimed))
+
+
+def _detect_inventory_for_unread_test():
+    from . import detect as _d
+    with tempfile.TemporaryDirectory() as td:
+        open(os.path.join(td, "a.toy"), "w").write("x\n")
+        open(os.path.join(td, "b.real"), "w").write("x\n")
+        inv = _d.inventory(td, {"toy": {"extensions": [".toy"]},
+                                "real": {"extensions": [".real"]}}, skip_dirs=set())
+        inv.lanes_for = {"toy": False, "real": True}
+        return inv
 
 
 def main():

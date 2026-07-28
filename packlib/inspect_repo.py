@@ -93,6 +93,9 @@ def guidance(profile, root, path):
         "rules": {rid: {"sev": r["sev"], "remedy": r.get("remedy"),
                         "attack": r.get("attack"), "failure": r.get("failure"),
                         "overreach": r.get("overreach"),
+                        # A known-good implementation of the remedy, inline. The model gets
+                        # what right looks like, not only what is wrong.
+                        "reference": r.get("reference_text"),
                         "suppressed_by": next((x["by"] for x in view.suppressed
                                                if x["rule"] == rid), None)}
                   for rid, r in view.rules.items()},

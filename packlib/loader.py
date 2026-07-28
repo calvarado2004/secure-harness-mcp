@@ -326,6 +326,19 @@ def _apply(pack, rules, vocabulary, facts, scan, fp_rules, suppressed):
                 f"{where} redefines rule '{rid}' owned by {rules[rid]['owner']}. "
                 f"A lower tier may reweight or suppress a rule, never redefine it. "
                 f"If you meant a different rule, give it a new id.")
+        # A rule may ship a REFERENCE: a known-good implementation of its remedy. Prose
+        # tells a model what is wrong; a reference shows it what right looks like, which is
+        # the difference this project measured between a fix that worked and one that did
+        # not. Resolved to text here so every consumer -- CLI, MCP, repair loop -- gets it
+        # without knowing where packs live on disk.
+        if spec.get("reference"):
+            rp = os.path.join(pack.dir, spec["reference"])
+            if not os.path.isfile(rp):
+                raise PackError(f"{where}: rule '{rid}' names reference "
+                                f"'{spec['reference']}' which does not exist.")
+            spec["reference_path"] = os.path.relpath(rp, ROOT)
+            with open(rp, encoding="utf8") as fh:
+                spec["reference_text"] = fh.read()
         spec["owner"] = pack.id
         spec["history"] = rules.get(rid, {}).get("history", []) + [f"defined by {where}"]
         rules[rid] = spec
@@ -497,8 +510,14 @@ def load_policy(profile="dealership", root=None, extra_packs=()):
         raise PackError("packs/general/pack.yaml is missing; it defines the severity "
                         "scale every other pack selects from.")
     chain.append(gen)
-    for sub in sorted(prof.get("general_axes", ["practice"])):
-        sp = _load_pack_dir(os.path.join(PACKS, "general", sub))
+    # EVERY general axis loads, always. It used to be a profile-supplied list defaulting to
+    # ["practice"], which meant adding packs/general/security silently reached no project
+    # and the language packs that bound its rule failed to resolve. Cross-language rules are
+    # not opt-in: a language pack that binds one is declaring it can detect it, and the
+    # declaration has to be there for the binding to attach to.
+    gen_dir = os.path.join(PACKS, "general")
+    for sub in sorted(os.listdir(gen_dir)):
+        sp = _load_pack_dir(os.path.join(gen_dir, sub))
         if sp:
             chain.append(sp)
 

@@ -179,6 +179,18 @@ def check_pack(pack, res):
             res.add(PASS, name, f"all {len(pack.rules)} security rules state their "
                                 f"overreach (what over-applying them costs)")
 
+    # ---- references, where a rule ships one -----------------------------
+    if pack.rules:
+        refs = {r: sp.get("reference") for r, sp in pack.rules.items()
+                if (sp or {}).get("reference")}
+        missing = [r for r, f in refs.items()
+                   if not os.path.isfile(os.path.join(pack.dir, f))]
+        if missing:
+            res.add(FAIL, name, f"rule(s) name a reference that does not exist: {missing}")
+        elif refs:
+            res.add(PASS, name, f"{len(refs)} rule(s) ship a known-good reference "
+                                f"implementation, and it exists on disk")
+
     # ---- 4. stated limits ----------------------------------------------
     if pack.rules or pack.binds:
         lp = pack.limits_path()

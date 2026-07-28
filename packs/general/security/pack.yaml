@@ -1,0 +1,39 @@
+id: general/security
+version: 1
+tier: commodity
+axis: security
+description: Security rules whose defect is the same in every language.
+
+# THE FIRST RULE THAT ACTUALLY NEEDED THE BIND MECHANISM.
+# "A bootstrap path creates a privileged account with a literal credential" is true of a SQL
+# seed script and of a Python one in exactly the same way, and the attack is word-for-word
+# identical. Declaring it twice would give one defect two ids and two weights, so a
+# repository that seeded an administrator in both places would score it as two different
+# problems. It is declared once here and BOUND by each language pack that can detect it.
+
+rules:
+  seed/default-admin-credential:
+    sev: HIGH
+    remedy: >-
+      read the bootstrap password from the environment and refuse to seed without it, or
+      create the account disabled and force a password to be set on first use. Seeding the
+      first administrator is legitimate; shipping its password is not.
+    attack: >-
+      the attacker reads the repository -- or simply guesses, because these passwords are
+      always `admin123` or `changeme` -- and signs in as an administrator on any deployment
+      that ran the seed. No vulnerability is required and nothing in the application logs
+      looks unusual, because the login is legitimate. It is the same privilege escalation as
+      a client-settable role field, arriving through the data instead of the API.
+    # A known-good implementation, handed to the model with the finding. Prose says what is
+    # wrong; a reference shows what right looks like -- and this project has already measured
+    # the difference between a model that was told a fix was needed and a model that was told
+    # exactly what the fix was.
+    reference: references/secure-bootstrap.md
+    overreach: >-
+      A SEED SCRIPT IS ALLOWED TO DO THINGS APPLICATION CODE IS NOT. It must be able to
+      create the first administrator, because without that account nobody can log in to
+      create the second one, and a rule that forbade bootstrap accounts outright would be
+      correct in the abstract and switched off within a week. So the rule fires only on the
+      part that is not necessary: the credential being a LITERAL. An account seeded with a
+      NULL or environment-supplied password is treated as the fix and stays silent, and an
+      unprivileged demo account with a literal password is not this rule's business at all.

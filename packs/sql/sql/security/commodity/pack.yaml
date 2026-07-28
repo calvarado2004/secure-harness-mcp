@@ -1,0 +1,80 @@
+id: sql/security
+version: 1
+tier: commodity
+runtime: sql
+axis: security
+description: Seed and init scripts — privilege and credentials that arrive with the schema.
+
+# `init-db.sql` was the last file in the brownfield subject that no lane read. Reading it
+# was an anticlimax (it is a placeholder) and the search it started found a real seeded
+# administrator one file over, in Python. Both are this concern; the shared rule is declared
+# in packs/general/security and bound here and in python/security/seed.
+
+binds:
+  - seed/default-admin-credential
+
+lanes:
+  seed_sql: {engine: internal_config, detector: repo_seed.scan_sql_tree, input: tree}
+
+rules:
+  sql/grant-all-privileges:
+    sev: MEDIUM
+    remedy: >-
+      separate the migration role from the runtime role: the migration role may hold DDL
+      rights and is used once, and the role the application connects with should hold
+      SELECT/INSERT/UPDATE/DELETE on its own tables and nothing else
+    attack: >-
+      any SQL injection anywhere in the application inherits every right the connection
+      holds. With GRANT ALL that is DROP TABLE, reading other schemas, and writing files
+      through COPY on some engines -- the difference between losing one query's rows and
+      losing the database.
+    overreach: >-
+      MIGRATIONS GENUINELY NEED DDL, and this is the rule most likely to be wrong for a real
+      team: nearly every framework's migration tool wants broad rights, and a lane that
+      demanded least privilege from the migration path would break deploys and be disabled.
+      It is MEDIUM, not HIGH, for exactly that reason, and the remedy asks for a role SPLIT
+      rather than a smaller grant. This lane cannot always tell which role the application
+      connects as; where it cannot, treat the finding as a prompt.
+
+  sql/superuser-role:
+    sev: MEDIUM
+    remedy: >-
+      grant the specific rights the role needs; SUPERUSER bypasses row level security and
+      every grant written after it
+    attack: >-
+      a SUPERUSER connection ignores row-level security, so multi-tenant isolation enforced
+      in the database silently does not apply to the application's own queries.
+    overreach: >-
+      local development and some managed-database bootstraps really do need a superuser
+      once. The finding is about the role the application keeps, not about the existence of
+      an admin role during provisioning.
+
+  sql/literal-role-password:
+    sev: MEDIUM
+    remedy: >-
+      supply the password from the environment at provisioning time; a literal here is
+      committed, imaged and shipped
+    attack: >-
+      the database password is in the repository and in every image layer built from it, so
+      anyone with read access to either can connect directly, bypassing the application and
+      every check in it.
+    overreach: >-
+      a dev-stack password in a file that never leaves a laptop is a reasonable trade, which
+      is why this is MEDIUM. It becomes serious the moment the same file provisions anything
+      shared, and nothing in the file says which case it is -- so it is reported and priced
+      low rather than suppressed.
+
+controls:
+  positive:
+    - file: controls/positive/seeded
+      must_flag: [sql/grant-all-privileges, sql/superuser-role, sql/literal-role-password,
+                  seed/default-admin-credential]
+  negative:
+    - file: controls/negative/bootstrapped
+      must_not_flag: [sql/grant-all-privileges, seed/default-admin-credential]
+      covers:
+        - "a narrowly-granted runtime role is the recommended shape, not a finding"
+        - "a bootstrap row with a NULL credential is the fix this rule asks for"
+        - "an unprivileged demo row with a literal password is a different concern"
+
+limits: LIMITS.md

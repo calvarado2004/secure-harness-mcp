@@ -1,0 +1,34 @@
+id: sql
+version: 0
+tier: commodity
+runtime: sql
+status: detect-only
+description: Schema, migrations and seed scripts — DETECTION ONLY, no lanes yet.
+
+# THIS RUNTIME WAS FOUND BY THE INVENTORY, NOT BY A DESIGN MEETING.
+# Running the router over the dealership repository for the first time, one file was claimed
+# by nothing at all: `init-db.sql`. The seed script that creates the database, grants its
+# privileges and inserts the first administrator was read by zero lanes, and every total in
+# study 2 was computed without it. That is the frontend blind spot again, in a new place,
+# and it was invisible until something counted the files nobody could read.
+#
+# WHAT BELONGS HERE WHEN LANES ARE WRITTEN (none of it is injection — that is the language
+# lanes' job, where the query is built):
+#   · the application connects as an owner or superuser rather than a least-privilege role
+#   · GRANT ALL, or a role with no grants at all because everything runs as postgres
+#   · PII columns in clear text where the application claims they are encrypted
+#   · a seed script that inserts a default administrator with a known password
+#     (this is E5's cousin: privilege that arrives with the schema rather than through an API)
+#   · missing NOT NULL / UNIQUE / FK constraints the application assumes and does not check
+#   · no row-level security on a multi-tenant table
+#
+# THE BALANCE THIS AXIS WILL NEED MOST. "The application should not connect as the owner" is
+# correct and it is also how nearly every real migration runs. A rule here that cannot tell a
+# migration connection from a request-path connection will demand something no team can ship,
+# and will be turned off. See `overreach` in the rule schema: it is required for a reason.
+
+detect:
+  extensions: [.sql, .ddl]
+  filenames: [init-db.sql, schema.sql, seed.sql]
+
+unmeasured_verdict: no_lane

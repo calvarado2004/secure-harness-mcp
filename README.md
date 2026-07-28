@@ -98,6 +98,10 @@ Works with both `mcp` 1.x and 2.x — they moved the server class between majors
   facts, or suppress — but suppression requires a written justification *and* a paired negative
   control on disk, and the suppressed rule stays visible in the resolved state instead of
   disappearing. Deleting or redefining a rule owned by a higher tier is refused outright.
+- **A rule can ship a known-good reference.** Prose tells a model what is wrong; a reference
+  shows it what right looks like. `seed/default-admin-credential` carries three concrete
+  mechanisms for seeding a database without shipping a credential, and the MCP hands the
+  whole document to the model alongside the finding.
 - **Every rule states its overreach.** Not just "what attack does this stop?" but "what does a
   *too-strict* application of it break in a real deployment?" Least privilege is the goal and a
   real stack still has to connect to things; a rule that breaks a working deployment gets switched
