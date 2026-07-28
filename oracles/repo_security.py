@@ -34,8 +34,10 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import repo_authz  # noqa: E402
+import repo_compose  # noqa: E402
 import repo_fastapi  # noqa: E402
 import repo_nginx  # noqa: E402
+import repo_storage  # noqa: E402
 import repo_practice  # noqa: E402
 
 SEV_W = {"HIGH": 3, "ERROR": 3, "MEDIUM": 2, "WARNING": 2, "LOW": 1, "INFO": 1}
@@ -287,7 +289,8 @@ def scan_codeql(root, codeql="codeql"):
 
 def assess_repo(root, use_codeql=True, use_frontend=True, use_authz=True,
                 use_practice=True, use_fastapi=True, use_nginx=True,
-                public_routes=None):
+                use_storage=True, use_compose=True,
+                public_routes=None, published_services=None):
     """The repository's security state, with every lane's status recorded.
 
     GENERATION NOTE. `use_fastapi` and `use_nginx` add two lanes that did not exist when
@@ -341,6 +344,16 @@ def assess_repo(root, use_codeql=True, use_frontend=True, use_authz=True,
         ng, bad = repo_nginx.scan_tree(root, public_routes=public_routes)
         lanes["nginx"] = ng is not None
         findings += ng or []
+
+    if use_storage:
+        st, bad = repo_storage.scan_storage(root)
+        lanes["storage"] = st is not None
+        findings += st or []
+
+    if use_compose:
+        co, bad = repo_compose.scan_tree(root, declared_published=published_services)
+        lanes["compose"] = co is not None
+        findings += co or []
 
     if use_practice:
         pr, bad = repo_practice.scan_practice(root)
@@ -454,9 +467,20 @@ if __name__ == "__main__":
         except Exception:
             routes = None
 
+    published = None
+    if not gen2:
+        try:
+            from packlib import load_policy
+            P = load_policy(os.environ.get("HARNESS_PROFILE", "dealership"), root=target)
+            published = sorted(P.fact("published_services"))
+        except Exception:
+            published = None
     a = assess_repo(target, use_codeql="--codeql" in sys.argv,
-                    use_fastapi=not gen2, use_nginx=not gen2, public_routes=routes)
-    gen = "gen2 (study-2 corpus lane set)" if gen2 else "gen3 (+fastapi, +nginx)"
+                    use_fastapi=not gen2, use_nginx=not gen2,
+                    use_storage=not gen2, use_compose=not gen2,
+                    public_routes=routes, published_services=published)
+    gen = ("gen2 (study-2 corpus lane set)" if gen2
+           else "gen3 (+fastapi, +nginx, +storage, +compose)")
     print(f"generation: {gen}   public_routes: "
           f"{'declared' if routes else 'UNAVAILABLE (introspection rule skipped)'}")
     print(f"lanes: {a['lanes']}  analyzable: {a['analyzable']}  weighted: {a['weighted']}  "

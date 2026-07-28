@@ -1,0 +1,74 @@
+id: python/security/objectstore
+version: 1
+tier: framework
+runtime: python
+axis: security
+description: Object storage — what the bucket policy actually grants, and over what.
+
+# The grant is DATA, not a dangerous call. bandit has no pattern for a dictionary literal,
+# CodeQL has no sink, the authorization lane reads handlers and this is a helper. Reading
+# the policy is the only way to know what the system gives away.
+
+lanes:
+  objectstore: {engine: internal_ast, detector: repo_storage.scan_storage, input: tree}
+
+rules:
+  storage/public-read-bucket:
+    sev: MEDIUM
+    remedy: >-
+      scope the grant to the prefix that is genuinely public (arn:aws:s3:::<bucket>/vehicles/*),
+      keep every other prefix private, and never grant Put/Delete to an anonymous principal;
+      serve non-public objects through the application or with pre-signed URLs
+    attack: >-
+      every object in the bucket is readable by anyone who can name it, and object names are
+      rarely secret -- they are filenames, ids, or sequential. Anything later written to the
+      same bucket for a different purpose (an export, an invoice, a scan of a driving
+      licence) is published the moment it lands, with no code change and no warning.
+    overreach: >-
+      public read is the correct and intended configuration for a public image CDN, and a
+      rule that forbade it outright would be wrong for most media buckets. It fires ONLY on
+      a bucket-wide wildcard: a grant scoped to the published prefix is treated as the fix
+      and stays silent, because a rule you cannot satisfy is a rule that gets switched off.
+
+  storage/anonymous-write:
+    sev: HIGH
+    remedy: >-
+      remove Put/Delete from any anonymous statement; uploads belong to an authenticated
+      path in the application, or to a pre-signed URL with a short expiry
+    attack: >-
+      anyone on the internet writes objects into your bucket: defacement of anything served
+      from it, storage billing as a denial-of-wallet, and a hosting platform for malware
+      served from your domain.
+    overreach: >-
+      none known for anonymous write specifically. If an anonymous upload endpoint is a real
+      product requirement it belongs behind the application with size, type and rate limits,
+      not as a bucket grant -- so there is no legitimate configuration this rule rejects.
+
+  storage/plaintext-transport:
+    sev: MEDIUM
+    remedy: >-
+      enable TLS to the object store, or confirm the hop never leaves an isolated network --
+      and record that in the project's deployment facts so the claim is checkable rather
+      than assumed
+    attack: >-
+      the access key and every object cross the network in clear text; anyone on the path
+      reads the credential and then has whatever the credential has.
+    overreach: >-
+      TLS between two containers on an isolated network is frequently and reasonably skipped,
+      and demanding certificates for a loopback hop produces a suppression. The remedy says
+      so explicitly and points at the deployment facts -- which are now verified by the
+      compose lane rather than asserted, so "it is internal" is a checkable claim.
+
+controls:
+  positive:
+    - file: controls/positive/wide
+      must_flag: [storage/public-read-bucket, storage/plaintext-transport]
+  negative:
+    - file: controls/negative/scoped
+      must_not_flag: [storage/public-read-bucket, storage/plaintext-transport,
+                      storage/anonymous-write]
+      covers: [a prefix-scoped read-only public grant is the FIX and must stay silent,
+               secure=True is not a transport finding,
+               a named IAM principal with write is not an anonymous grant]
+
+limits: LIMITS.md

@@ -1,0 +1,77 @@
+id: container/security
+version: 1
+tier: commodity
+runtime: container
+axis: security
+description: What the deployment publishes, versus what the project claims it publishes.
+
+# THIS PACK IS THE CONTROL ITS OWN RUNTIME PACK ASKED FOR.
+# packs/container/pack.yaml warned that deployment context "must not become a way to talk a
+# finding down -- a finding excused because we run in a container is only fine if a
+# container lane actually verified the container." This project then shipped a profile
+# claiming `published: [nginx]` for a compose file that published four services, and priced
+# a finding against it. This lane reads compose and compares, so `deployment.verified` is
+# earned from evidence instead of asserted -- and it caught the FIRST correction too, which
+# still named the wrong service.
+
+# `container/undeclared-published-port` needs the project's declared publish list, exactly
+# as the FastAPI introspection rule needs its declared public routes. Without the fact the
+# rule cannot fire -- there is nothing to compare against -- so it stays silent rather than
+# guessing, and the pack control below therefore exercises the credential rule. The port
+# rule's own controls, in both directions plus verify_deployment, live in the lane selftest
+# (`repo_compose.py --selftest`), which can supply the fact.
+requires_facts:
+  - published_services
+
+lanes:
+  compose: {engine: internal_config, detector: repo_compose.scan_tree, input: tree}
+
+rules:
+  container/undeclared-published-port:
+    sev: MEDIUM
+    remedy: >-
+      remove the host port mapping so the service is reachable only on the compose network,
+      bind it to 127.0.0.1 for local access, or -- if it really is meant to be published --
+      add it to the project's `deployment.published` so the claim matches reality and any
+      severity priced against it is honest
+    attack: >-
+      the database, the object store and its admin console answer directly on the host,
+      outside whatever the reverse proxy enforces. Paired with the documented default
+      credentials in the same file, reaching the data needs no application vulnerability at
+      all: connect to the port and authenticate.
+    overreach: >-
+      publishing these ports is normal and useful in local development, and a rule that
+      forbade it would be ignored within a week. It fires on the MISMATCH, not on the
+      mapping: publish whatever you like, as long as the project says so. A 127.0.0.1
+      binding is never reported, because that is the correct way to keep local access.
+
+  container/shipped-service-credential:
+    sev: MEDIUM
+    remedy: >-
+      take the value from the environment (${VAR:?required}) so a deployment cannot inherit
+      it silently
+    attack: >-
+      the deployment that forgets to override is secured with a value printed in the public
+      source tree. Documented image defaults like minioadmin/minioadmin are worse than a
+      weak password: an attacker does not have to read your repository to guess them.
+    overreach: >-
+      a compose file ships working local values BY DESIGN and a rule that treated every one
+      as critical would bury the one that matters. Image defaults are reported at LOW and
+      values that already come from ${ENV} are not reported at all -- the finding is there
+      so that publishing the service is a visible decision, not to demand secrets management
+      in a dev stack.
+
+controls:
+  positive:
+    - file: controls/positive/exposed
+      must_flag: [container/shipped-service-credential]
+  negative:
+    - file: controls/negative/contained
+      must_not_flag: [container/undeclared-published-port,
+                      container/shipped-service-credential]
+      covers:
+        - "`expose` is not publishing"
+        - "a 127.0.0.1 binding is not host-reachable"
+        - "a value taken from an environment variable is the fix and not a finding"
+
+limits: LIMITS.md

@@ -429,8 +429,16 @@ def routing():
           and P.for_runtime("python").severity == P.for_runtime("browser-js").severity)
 
     if subject_present:
+        # `sql`, not `container`: container graduated from detect-only to a real lane, so
+        # asserting it is UNREAD stopped being true. Pinning a control to whichever runtime
+        # happens to be unimplemented today is how a control silently changes meaning --
+        # the assertion is that an unimplemented runtime IS REPORTED, not which one it is.
+        unread = sorted(inv.unread)
         check("a runtime with NO lanes is reported UNREAD, not clean",
-              "container" in inv.unread, f"unread: {sorted(inv.unread)}")
+              "sql" in unread, f"unread: {unread}")
+        check("...and a runtime that HAS gained a lane is no longer reported unread",
+              "container" not in unread,
+              "container was detect-only and now reads compose")
         check("a file no runtime claims is reported as a blind spot",
               any(f.endswith(".sql") for f in inv.unclaimed) or "sql" in inv.by_runtime,
               f"unclaimed: {inv.unclaimed}")

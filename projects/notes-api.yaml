@@ -13,13 +13,19 @@ runtimes: auto
 axes: [security]
 frameworks: []
 
-facts: {}
+facts:
+  # Verified against docker-eval/compose/docker-compose.yml with
+  # oracles/repo_compose.published_services, not asserted: `proxy` is the only service with
+  # host port mappings, which is what makes the V2 claim "generated code has no host or
+  # internet egress" a checkable statement rather than a design intention.
+  published_services: [proxy]
 
 deployment:
   orchestrator: compose
   network: internal
-  published: [nginx]
+  published: [proxy]
   secrets_from: environment
+  verified: true      # by oracles/repo_compose.verify_deployment against the stack file
 
 context_reweight:
   - rule: B104

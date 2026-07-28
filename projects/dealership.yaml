@@ -47,6 +47,11 @@ facts:
   local_stack_creds: [postgres_password, postgres_user, minio_access_key,
                       minio_secret_key, minio_root_password]
 
+  # Which compose services this project intends to publish to the host. The compose lane
+  # compares this with reality; `deployment.published` above is the same claim, and it is
+  # now verified from evidence rather than asserted.
+  published_services: [frontend, api, postgres, minio]
+
 # ---------------------------------------------------------------------------
 # DEPLOYMENT CONTEXT. Where this code runs changes what a finding means.
 # ---------------------------------------------------------------------------
@@ -60,9 +65,13 @@ facts:
 deployment:
   orchestrator: compose
   network: host-published    # every service is reachable from the host
-  published: [nginx, api, postgres, minio]
+  # VERIFIED against docker-compose.yml by oracles/repo_compose.verify_deployment, not
+  # asserted. The first correction of this block still had it wrong -- it said `nginx`,
+  # and the compose service is called `frontend` -- which is the whole argument for
+  # earning this flag from a lane instead of writing it down carefully.
+  published: [frontend, api, postgres, minio]
   secrets_from: literal-defaults   # config.py ships working values; see the E6 finding
-  verified: false            # no container lane exists yet to check any of this
+  verified: true
 
 # A pack may reweight against that context; so may a project, here, with the same rules and
 # the same audit trail. `why` is not optional — an unexplained reweight is indistinguishable
