@@ -2,8 +2,7 @@ id: container
 version: 0
 tier: commodity
 runtime: container
-status: detect-only
-description: Dockerfiles, compose files and Kubernetes manifests — DETECTION ONLY, no lanes yet.
+description: Dockerfiles, compose files and Kubernetes manifests — what the deployment publishes.
 
 # CONTAINERS ARE TWO DIFFERENT THINGS TO THIS HARNESS, AND CONFLATING THEM IS A MISTAKE.
 #
@@ -42,4 +41,4 @@ detect:
       extensions: [.yaml, .yml]
       requires: '^kind:\s'
 
-unmeasured_verdict: no_lane
+unmeasured_verdict: unreadable

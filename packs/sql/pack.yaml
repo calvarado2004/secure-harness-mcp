@@ -2,8 +2,7 @@ id: sql
 version: 0
 tier: commodity
 runtime: sql
-status: detect-only
-description: Schema, migrations and seed scripts — DETECTION ONLY, no lanes yet.
+description: Schema, migrations and seed scripts — privilege that arrives with the data.
 
 # THIS RUNTIME WAS FOUND BY THE INVENTORY, NOT BY A DESIGN MEETING.
 # Running the router over the dealership repository for the first time, one file was claimed
@@ -31,4 +30,4 @@ detect:
   extensions: [.sql, .ddl]
   filenames: [init-db.sql, schema.sql, seed.sql]
 
-unmeasured_verdict: no_lane
+unmeasured_verdict: unreadable
