@@ -1,0 +1,45 @@
+id: container
+version: 0
+tier: commodity
+runtime: container
+status: detect-only
+description: Dockerfiles, compose files and Kubernetes manifests — DETECTION ONLY, no lanes yet.
+
+# CONTAINERS ARE TWO DIFFERENT THINGS TO THIS HARNESS, AND CONFLATING THEM IS A MISTAKE.
+#
+# (1) A RUNTIME with its own defects. A Dockerfile that runs as root, a compose file that
+#     publishes a database port, a Pod with `privileged: true`, `hostNetwork: true`, no
+#     resource limits, or a secret in `env:` — none of these are visible to any language
+#     lane, because no language lane opens these files. That is a blind spot of exactly the
+#     kind the frontend lane was: invisible by construction. Lanes go in
+#     packs/container/security/commodity/ when they are written.
+#
+# (2) DEPLOYMENT CONTEXT that changes what OTHER packs' findings mean. This is the part that
+#     is easy to miss and it is already hand-coded in two places in this project:
+#       · bandit B104 ("do not bind 0.0.0.0") is a real finding on a host and the WRONG
+#         advice for a service on an internal container network behind a proxy — the remedy
+#         in packs/python/security says so in prose today.
+#       · a compose file ships working dev credentials BY DESIGN, and the deployment
+#         overrides them; flagging those HIGH buries the one default that actually matters.
+#         `local_stack_creds` in the project profile exists solely to encode that.
+#     Both are the same idea: the severity of a finding depends on where the code runs.
+#     Rather than hard-code more special cases, a project declares its deployment in
+#     `deployment:` and any pack may reweight against it with `context_reweight:`. The
+#     reweight is recorded in the rule's history like every other layer's edit, so a
+#     practitioner can always ask why a HIGH became a LOW and get an answer.
+#
+# WHEN LANES ARE ADDED HERE, note that (2) must not become a way to talk (1) down. A finding
+# suppressed because "it is fine, we run in a container" is only fine if a container lane
+# actually verified the container. Otherwise the context is an assertion, not a control.
+
+detect:
+  filenames: [Dockerfile, docker-compose.yml, docker-compose.yaml, compose.yml, compose.yaml,
+              .dockerignore]
+  extensions: [.dockerfile]
+  # Kubernetes manifests are .yaml like everything else, so they are identified by content.
+  content_match:
+    - pattern: '^apiVersion:\s'
+      extensions: [.yaml, .yml]
+      requires: '^kind:\s'
+
+unmeasured_verdict: no_lane

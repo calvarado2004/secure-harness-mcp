@@ -1,0 +1,23 @@
+# THE SEVERITY SCALE. Defined once, for every runtime and every axis.
+#
+# A pack may SELECT a level. A pack may never define one. That restriction is what makes
+# `weighted` arithmetic on commensurable units: a HIGH from the browser sink lane and a
+# HIGH from bandit have to mean the same thing to the gate, or "load went down" is a
+# sentence about nothing.
+#
+# The aliases exist because the underlying engines disagree about names: bandit says
+# HIGH/MEDIUM/LOW, semgrep and CodeQL say ERROR/WARNING/INFO. They are the same three
+# levels and are weighted identically.
+weights:
+  HIGH: 3
+  ERROR: 3
+  MEDIUM: 2
+  WARNING: 2
+  LOW: 1
+  INFO: 1
+
+levels: [HIGH, MEDIUM, LOW]
+aliases:
+  ERROR: HIGH
+  WARNING: MEDIUM
+  INFO: LOW

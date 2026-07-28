@@ -1,0 +1,324 @@
+id: python/security
+version: 1
+tier: commodity
+runtime: python
+axis: security
+description: Commodity Python security lanes — bandit, CodeQL dataflow, and our own AST detectors.
+
+# WHAT THIS PACK IS
+# The remedy library for the rule ids the Python engines report, plus the false-positive
+# filters that were each bought with a real misfire. It is deliberately boring: this is the
+# commodity tier, the part that is the same for everybody. Everything that depends on YOUR
+# application -- who may call what, which models are sensitive -- is the authorization axis
+# and the project tier, not here.
+#
+# `sev: engine` means the reporting engine assigns the severity and the pack does not
+# second-guess it. An org overlay may pin a level with `reweight:`; that pin wins.
+#
+# REMEDIES ARE PART OF THE RULE, NOT A NICETY. The measured result behind this: an identical
+# model and an identical finding FAILED under a bare rule id and SUCCEEDED once the harness
+# said precisely what to do and why the previous attempt had not worked. The lever is
+# feedback quality. A rule that ships without a remedy ships without most of its value.
+
+lanes:
+  bandit: {engine: bandit, reports: rule_id, detector: repo_security.scan_bandit, input: tree}
+  codeql: {engine: codeql, reports: query_id, queries: python-security-and-quality}
+  credential_logging: {engine: internal_ast, detector: scan_credential_logging}
+
+fp_rules:
+  # Rules a pattern scanner is too imprecise to gate on: a dataflow engine adjudicates them
+  # instead. Deferring is not suppressing -- the finding still has an owner.
+  defer_to_dataflow: [B608, B310]
+  auth_keywords: (?i)(auth|permission|role|is_admin|verify|token)
+
+rules:
+  B104:
+    sev: engine
+    remedy: >-
+      Do not bind 127.0.0.1 for a service that must accept requests — that makes a
+      containerised service unreachable. Serve behind a reverse proxy: run under gunicorn bound
+      to a unix socket (gunicorn --bind unix:/run/app.sock) with nginx in front, or bind
+      0.0.0.0 only inside an isolated container network. Keep app.run(debug=False).
+    attack: >-
+      an operator believes the service is bound to loopback and fronted by a proxy; on a host
+      with a public interface it is reachable directly from the network, bypassing whatever the
+      proxy was enforcing
+    overreach: >-
+      inside a container on an internal network, binding 0.0.0.0 is the ONLY way the proxy can
+      reach the service. Demanding 127.0.0.1 there makes the app unreachable and the team
+      deletes the rule. Price it against `deployment.network` rather than asserting it
+  B105:
+    sev: engine
+    remedy: >-
+      Do not hardcode secrets. Read them from the environment (os.environ[...]) and fail fast
+      at startup if unset; never ship a real default.
+    attack: >-
+      the credential is in the source tree, therefore in every clone, every CI log and the
+      published artifact; an attacker who reads the repository authenticates as the service
+    overreach: >-
+      test fixtures, example configs and local-stack defaults legitimately carry literal
+      values. A rule that cannot tell those apart buries the one default that matters -- which
+      is why `local_stack_creds` and the `nonsecret_literal` filter exist
+  B106:
+    sev: engine
+    remedy: >-
+      Do not pass a hardcoded password/secret as an argument. Read it from the environment and
+      fail fast if unset.
+    attack: >-
+      as B105: the secret is readable by anyone who can read the code, and rotating it means a
+      deploy
+    overreach: >-
+      same as B105. A password argument in a test helper is not a finding, and flagging it
+      teaches the team to write `# nosec`
+  B201:
+    sev: engine
+    remedy: >-
+      Never run Flask with debug=True in production — the interactive debugger is remote code
+      execution. Set debug=False and gate any debug on an env var that defaults to off.
+    attack: >-
+      the Werkzeug debugger is remote code execution: request a page that errors, open the
+      interactive console, run Python as the service user
+    overreach: >-
+      debug=True is how everyone develops. The rule must target the production configuration,
+      not the existence of the flag behind an env guard -- otherwise it is unshippable and gets
+      suppressed
+  B301:
+    sev: engine
+    remedy: >-
+      Do not unpickle untrusted data — it is remote code execution. Use JSON, or a
+      schema-validated format, for anything that crosses the trust boundary.
+    attack: >-
+      the attacker supplies a crafted pickle whose __reduce__ executes a command; deserialising
+      it is full RCE, no escape needed
+    overreach: >-
+      pickle is fine for data a process writes and reads itself and that never crosses a trust
+      boundary. A blanket ban rewrites safe internal caching code for nothing
+  B307:
+    sev: engine
+    remedy: >-
+      Do not eval() request data. For arithmetic, parse with ast.literal_eval on a whitelisted
+      expression grammar, or a small explicit tokenizer; reject anything else with 400.
+    attack: >-
+      input containing `__import__('os').system(...)` runs commands as the service user
+    overreach: >-
+      eval over a fixed, developer-authored expression (a config formula, a units table) is not
+      the same defect. Where the lane cannot follow the data, weight by whether request data
+      plausibly reaches it
+  B310:
+    sev: engine
+    remedy: >-
+      Before fetching a user-supplied URL, validate the scheme (https only) and
+      resolve+allowlist the host to block internal addresses (SSRF). Reject file://, ftp:// and
+      link-local/private ranges.
+    attack: >-
+      SSRF: the attacker passes an internal URL and the server fetches cloud instance metadata,
+      an internal admin page, or a service that trusts the network
+    overreach: >-
+      an allowlist that is too narrow breaks legitimate outbound integrations -- webhooks,
+      OAuth discovery, avatar fetch. The balance is scheme + host allowlist plus a
+      private/link-local IP denylist, NOT 'no outbound calls'
+  B324:
+    sev: engine
+    remedy: >-
+      MD5/SHA1 are not acceptable for security. Hash passwords with a slow KDF (argon2, scrypt,
+      bcrypt, or werkzeug.security.generate_password_hash); for file checksums that are not
+      security decisions, pass usedforsecurity=False.
+    attack: >-
+      fast unsalted hashes are cracked offline at billions of guesses per second; a stolen
+      table becomes a password list
+    overreach: >-
+      non-security checksums -- file dedup, cache keys, ETags -- legitimately use md5/sha1 and
+      flagging them is pure noise. `usedforsecurity=False` is the intended escape hatch and
+      using it is correct, not a suppression
+  B506:
+    sev: engine
+    remedy: >-
+      Load YAML with yaml.safe_load, never yaml.load, on untrusted input.
+    attack: >-
+      `!!python/object` tags in the document instantiate arbitrary objects during load
+    overreach: >-
+      none known. safe_load is a drop-in replacement for essentially every configuration use,
+      which is exactly why this rule can be gated on hard
+  B608:
+    sev: engine
+    remedy: >-
+      Build SQL with parameter placeholders (execute(sql, params)); never format user input
+      into the query string.
+    attack: >-
+      classic injection: the attacker closes the literal and appends their own clause, reading
+      or modifying rows the query never intended
+    overreach: >-
+      identifiers -- table and column names, a dynamic ORDER BY -- CANNOT be parameterised, and
+      a rule that demands placeholders for them forces a suppression. Balance: allowlist the
+      identifier, parameterise the values
+  py/clear-text-logging-sensitive-data:
+    sev: engine
+    remedy: >-
+      Do not log secrets, tokens or passwords. Redact them before logging.
+    attack: >-
+      logs are shipped, indexed and widely readable -- often more widely than the database. A
+      credential in a log is a credential given to everyone with dashboard access (CWE-532)
+    overreach: >-
+      redacting too aggressively removes the identifiers needed to trace a request. Redact
+      values, keep correlation ids. NOTE: wrapping the value in a sanitiser that still logs it
+      is NOT a fix -- that exact non-fix was observed in this project's runs
+  py/clear-text-storage-sensitive-data:
+    sev: engine
+    remedy: >-
+      Do not store secrets in clear text. Hash passwords; encrypt or externalise other secrets.
+    attack: >-
+      one SQL read -- through injection, a backup, or a misconfigured replica -- yields
+      directly usable credentials
+    overreach: >-
+      encrypting a field you must search or join on breaks the feature. Hash what you only ever
+      compare, encrypt what you must read back, and accept that some fields are neither
+  py/code-injection:
+    sev: engine
+    remedy: >-
+      User input reaches code execution (eval/exec/compile). Remove it; parse the input
+      explicitly instead.
+    attack: >-
+      as B307
+    overreach: >-
+      as B307
+  py/command-line-injection:
+    sev: engine
+    remedy: >-
+      User input reaches a shell command. Avoid shell=True and pass an argument list;
+      validate/allowlist any interpolated value.
+    attack: >-
+      shell metacharacters in an interpolated value run a second command as the service user
+    overreach: >-
+      `shell=True` with a fully static command is not a defect, and some pipelines genuinely
+      need a shell. Pass an argument list where you can; where you cannot, quote and say why
+  py/flask-debug:
+    sev: engine
+    remedy: >-
+      Do not run Flask with debug=True in production (RCE via the debugger). Set debug=False.
+    attack: >-
+      as B201: the debugger console is RCE
+    overreach: >-
+      as B201: gate on the environment, not on the flag existing
+  py/full-ssrf:
+    sev: engine
+    remedy: >-
+      A user-controlled URL is fetched without restriction. Allowlist the scheme (https) and
+      destination host, and block private/link-local addresses, before making the request.
+    attack: >-
+      the attacker chooses the host and the server fetches it, reaching anything the server can
+      reach and nothing the attacker could
+    overreach: >-
+      as B310: too narrow an allowlist breaks real integrations. Deny by IP range after
+      resolution, allow by scheme and host
+  py/log-injection:
+    sev: engine
+    remedy: >-
+      User input is written to logs unsanitised. Strip newlines/control characters (or log
+      structured fields) so entries cannot be forged.
+    attack: >-
+      a newline in a logged value forges log entries: the attacker writes their own
+      'authentication succeeded' line and hides the real one
+    overreach: >-
+      over-sanitising strips information a responder needs during an incident. Structured
+      logging fixes this properly; escaping is the fallback
+  py/partial-ssrf:
+    sev: engine
+    remedy: >-
+      Part of a fetched URL is user-controlled. Validate scheme and host against an allowlist
+      rather than substring checks.
+    attack: >-
+      the attacker controls a path or query fragment and redirects the fetch, often past a
+      substring check that looked sufficient
+    overreach: >-
+      substring checks fail both ways -- they are why this rule exists, and an over-strict
+      version blocks legitimate URLs with unusual but valid forms
+  py/path-injection:
+    sev: engine
+    remedy: >-
+      A user-controlled value reaches a filesystem path. Confine it: take only
+      os.path.basename, resolve against a fixed upload root, and verify the resolved path stays
+      within that root before use.
+    attack: >-
+      `../../etc/passwd`, or an absolute path, reads or writes outside the upload root
+    overreach: >-
+      basename-only stripping breaks any product that legitimately stores nested user paths.
+      Confine with realpath against a fixed root instead of destroying the structure
+  py/reflective-xss:
+    sev: engine
+    remedy: >-
+      User input is reflected into HTML unescaped. Escape it (markupsafe/Jinja autoescape) or
+      return JSON, not hand-built HTML.
+    attack: >-
+      the attacker sends a victim a link whose parameter is reflected into the page and
+      executes in the victim's session
+    overreach: >-
+      a JSON API consumed only by non-browser clients is not an XSS surface. Blanket escaping
+      breaks endpoints that legitimately return HTML
+  py/sql-injection:
+    sev: engine
+    remedy: >-
+      User input flows into a SQL query. Use parameter placeholders and pass values as the
+      params argument; never concatenate or format.
+    attack: >-
+      as B608
+    overreach: >-
+      as B608
+  py/stack-trace-exposure:
+    sev: engine
+    remedy: >-
+      Do not return exception text or tracebacks to the client. Log the detail server-side and
+      return a generic error message with the right status code.
+    attack: >-
+      the traceback discloses paths, library versions, the SQL that failed and sometimes
+      credentials -- each one shortens the next attack
+    overreach: >-
+      developers need that detail to fix incidents. The balance is full detail server-side with
+      a correlation id returned to the client, not silence
+  py/template-injection:
+    sev: engine
+    remedy: >-
+      User input reaches template construction. Render with a fixed template and pass data as
+      context; never build the template string from input, and keep autoescaping on.
+    attack: >-
+      server-side template injection escalates to RCE through the sandbox; `{{ ''.__class__ }}`
+      is the first step
+    overreach: >-
+      user-authored templates are a real product feature (email and report templates). The
+      answer is a sandboxed renderer with a fixed loader, not a ban
+  py/unsafe-deserialization:
+    sev: engine
+    remedy: >-
+      Do not deserialise untrusted data with pickle/yaml.load/marshal. Use JSON or a validated
+      schema.
+    attack: >-
+      as B301: deserialising attacker-controlled bytes executes attacker-chosen code
+    overreach: >-
+      as B301: internal, same-trust-boundary use is fine
+  py/weak-sensitive-data-hashing:
+    sev: engine
+    remedy: >-
+      Hash passwords with a slow salted KDF (argon2/scrypt/bcrypt), not a fast general-purpose
+      hash.
+    attack: >-
+      as B324, applied to passwords: the stolen table is cracked at scale
+    overreach: >-
+      KDF cost parameters set too high are a denial of service on your own login endpoint.
+      Balance cost against p95 login latency and revisit it as hardware changes
+
+limits: LIMITS.md
+
+controls:
+  positive:
+    # Proves bandit RAN. A zero from a lane that did not run is the defect this whole
+    # project is about, and it is not detectable from the total.
+    - file: controls/positive/vulnerable
+      must_flag: [B105, B301, B307, B324, B506, B608]
+  negative:
+    # Every construct in this file was a real false positive from a real run. If a filter is
+    # tightened and one starts firing again, load rises with no defect behind it.
+    - file: controls/negative/safe
+      must_not_flag: [B105, B324, B608]
+      covers: ["`Bearer`/`scrypt` are not secrets (the single bandit finding on the real repo)",
+               usedforsecurity=False on a non-security checksum,
+               a parameterised query that a pattern lane misreads as concatenation,
+               defensive try/except/pass around a close()]

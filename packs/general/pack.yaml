@@ -1,0 +1,41 @@
+id: general
+version: 1
+tier: commodity
+description: Vocabulary and doctrine that belong to no single language.
+
+# WHY THIS PACK EXISTS
+# "secret", "is_admin", "token" mean the same thing in Python, in JavaScript and in a
+# Dockerfile. Defining those word lists once is what lets a finding from the browser lane
+# and a finding from bandit be added together honestly. Anything here is a fact about
+# ENGLISH and about how software talks about privilege -- never about a parser.
+#
+# WHAT DOES NOT BELONG HERE
+# Anything a specific parser or framework knows: `Depends(...)`, `innerHTML`, `app.run`.
+# Those live in packs/<runtime>/.
+
+vocabulary:
+  # substrings that make a variable name look like it holds a credential
+  secretish: [secret, password, token, api_key, apikey, private_key]
+  # fields whose value decides what the caller is allowed to do
+  priv_fields: [role, is_admin, is_superuser, is_staff, is_active, permissions, scopes]
+  # the subset of those whose client-settability is outright privilege escalation
+  hard_priv: [role, is_admin, is_superuser, is_staff, permissions, scopes]
+  # evidence that a piece of code makes a decision about WHO the caller is
+  role_hints: [role, permission, scope, is_admin, is_superuser, forbidden, "403"]
+  # names of logging entry points, for "is a secret being written to a log"
+  log_levels: [critical, debug, error, exception, info, log, warn, warning]
+
+  # Name/value patterns. Regexes, applied to identifiers and string literals.
+  secret_name: (?i)(secret|password|passwd|api[_-]?token|api[_-]?key|private[_-]?key|access[_-]?key)
+  sensitive_log: (?i)(password|passwd|secret|token|api[_-]?key|apikey|credential|private[_-]?key|session[_-]?id|username|email)
+  # literals that LOOK like secrets to a scanner and are not: scheme names, algorithm
+  # names, constants. Every entry here is a false positive someone actually hit.
+  nonsecret_literal: (?i)^(bearer|basic|token|jwt|none|true|false|null|(scrypt|pbkdf2|argon2|bcrypt|sha1|sha256|sha512|md5)[:\-]?.*|.*sha\d+.*\(werkzeug\).*|[A-Z][A-Z0-9_]{2,}|.*\b(hash|hashes|algorithm|only
+    a hash|never returned)\b.*)$
+
+  generic_remedy: Address the flagged issue; keep every endpoint and behaviour intact and
+    do not weaken authentication, authorisation or input validation to do it.
+
+scan:
+  # directories no lane should descend into, in any runtime
+  skip_dirs: [__pycache__, .git, node_modules, .venv, images]

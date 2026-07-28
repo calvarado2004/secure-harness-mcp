@@ -34,6 +34,76 @@ trap — only the feedback loop delivers both security and buildability.**
 fronts any model; every completion containing code is run through the loop automatically, so *any*
 client pointed at it is hardened with no client change.
 
+## Policy packs: the rule set as an editable, testable artifact
+
+The tools above ship a fixed rule set. **Packs** make the rules an artifact you own — organised
+per programming language, then axis, with a company layer on top — so a team can encode its own
+security practices, engineering standards and internal conventions without forking anything.
+
+```
+packs/<runtime>/<axis>/<tier>/pack.yaml
+       │         │      └── who owns it:  commodity < framework < org < project
+       │         └───────── what the gate promises:  security, authorization, practice
+       └─────────────────── which parser can open the file:  python, browser-js, sql, ...
+```
+
+`packs/general/` holds what belongs to no language — the one severity scale, the word lists that
+mean the same thing everywhere, and cross-language rules that each language pack *binds* to its own
+detector, so one invariant keeps one id and one weight across a polyglot repository.
+
+**Two MCP tools** answer the questions an agent in an unfamiliar repository actually has:
+
+| tool | what it does |
+|---|---|
+| `repo_inventory(repo, profile)` | routes every file to the packs that read it, and reports what **nothing** reads |
+| `module_guidance(repo, path, profile)` | the rules that apply to *this* module because of its language, plus the project's declared facts and deployment context |
+
+Run it standalone:
+
+```bash
+python -m packlib.mcp_server          # MCP over stdio
+python -m packlib.inspect_repo <profile> <repo>    # same thing, as a CLI
+python -m packlib.packtest            # do the packs discharge their obligations?
+python -m packlib.selftest_packs      # does the pack system itself still hold?
+```
+
+```jsonc
+// MCP client config
+{ "command": "python", "args": ["-m", "packlib.mcp_server"],
+  "env": { "HARNESS_PROFILE": "your-project" } }
+```
+
+### What makes this different from a linter config
+
+- **A blind spot is reported, never skipped.** Files a runtime claims but no lane reads come back
+  as UNREAD; files no runtime claims come back as UNCLAIMED. Neither is a clean result. Running
+  this against its own development subject immediately surfaced two: the container files and the
+  SQL seed script that grants privileges and inserts the first administrator.
+- **A company layer may not weaken the policy silently.** An overlay can add, reweight, supply
+  facts, or suppress — but suppression requires a written justification *and* a paired negative
+  control on disk, and the suppressed rule stays visible in the resolved state instead of
+  disappearing. Deleting or redefining a rule owned by a higher tier is refused outright.
+- **Every rule states its overreach.** Not just "what attack does this stop?" but "what does a
+  *too-strict* application of it break in a real deployment?" Least privilege is the goal and a
+  real stack still has to connect to things; a rule that breaks a working deployment gets switched
+  off, taking the protection it did provide with it. "None known" is a legitimate answer — silence
+  is not.
+- **Deployment context reprices findings.** Binding `0.0.0.0` is correct for a container on an
+  internal network behind a proxy and a real defect on a host. A project declares its deployment
+  and rules are priced against it, with the reason recorded — change the deployment and the finding
+  comes back at full weight.
+- **Packs must earn admission.** `packtest` enforces seven obligations (positive control, paired
+  negative control, an "I could not measure this" verdict, stated limits, attack-or-failure per
+  rule, held-out isolation, and overreach) and refuses to load a pack that fails one.
+
+Languages today: `python` and `browser-js` have lanes. `container`, `sql`, `node-js`, `shell`,
+`go`, `java`, `c` and `cpp` are **detect-only** — declared, so their files are inventoried as
+unread rather than silently ignored, which is a legitimate state to ship and an honest one.
+
+Full documentation: **[docs/PACKS.md](docs/PACKS.md)**.
+
+---
+
 ## Architecture
 
 Two entry points — the **MCP server** (explicit tools) and the **transparent proxy** (implicit, on

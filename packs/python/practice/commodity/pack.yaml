@@ -1,0 +1,38 @@
+id: python/practice
+version: 1
+tier: commodity
+runtime: python
+axis: practice
+description: Python detector for the cross-language practice rules.
+
+# Binds one rule from packs/general/practice. It is the rule that most needs a server-side
+# detector: the same sensitive resource reachable through several handlers, some guarded and
+# some not. The forgotten second path is the vulnerability -- an IDOR shipped through /export
+# in this project's other study while the primary read path was correctly guarded.
+#
+# It needs the same facts as the authorization lane, and takes them from the same place, so
+# the project declares its public surface ONCE. A divergence rule without `public_routes`
+# fires on every deliberately-anonymous endpoint and teaches the practitioner to ignore the
+# lane -- which is how a rule set dies.
+
+binds:
+  - practice/divergent-resource-access
+
+requires_facts:
+  - auth_deps
+  - public_routes
+  - sensitive_models
+
+lanes:
+  practice_python: {engine: internal_ast, detector: repo_practice.scan_practice, input: tree}
+
+limits: LIMITS.md
+
+controls:
+  positive:
+    - file: controls/positive/divergent
+      must_flag: [practice/divergent-resource-access]
+  negative:
+    - file: controls/negative/consistent
+      must_not_flag: [practice/divergent-resource-access]
+      covers: [consistent guarding across every path to a resource is not divergence]

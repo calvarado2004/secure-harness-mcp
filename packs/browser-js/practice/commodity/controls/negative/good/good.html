@@ -1,0 +1,10 @@
+<html><body><script>
+let token = localStorage.getItem('t');
+function save(v){ localStorage.setItem('t', v); }
+function clear(){ localStorage.removeItem('t'); }
+async function load(){
+  const res = await fetch('/x');
+  if (!res.ok) throw new Error('failed');
+  el.textContent = (await res.json()).name;
+}
+</script></body></html>

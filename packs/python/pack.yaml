@@ -1,0 +1,30 @@
+id: python
+version: 1
+tier: commodity
+runtime: python
+description: The Python runtime — which files are Python, and how they are read.
+
+# A RUNTIME PACK ANSWERS ONE QUESTION: which files in this repository does this runtime
+# claim? Nothing else. The rules live in packs/python/<axis>/.
+#
+# WHY DETECTION IS DECLARED AND NOT INFERRED
+# A polyglot repository is scanned module by module, and each module is routed to the packs
+# for ITS language. That routing has to be inspectable: a practitioner must be able to see
+# why `manage.py` was read as Python and `bundle.min.js` was not read at all. A file no
+# runtime claims is not skipped quietly -- the inventory reports it as a blind spot, because
+# "no lane could read this" and "this is clean" are different answers and only one of them
+# is true.
+
+detect:
+  extensions: [.py, .pyi]
+  filenames: [manage.py, wsgi.py, asgi.py, conftest.py]
+  shebang: python
+
+scan:
+  # Python-specific additions to the general skip list.
+  skip_dirs: [.mypy_cache, .pytest_cache, site-packages, migrations]
+
+# A module that does not parse silences every AST engine for that module while the rest of
+# the tree still reports findings -- so the total falls and reads as progress. Any lane on
+# this runtime must return this verdict instead of a count.
+unmeasured_verdict: parse_error

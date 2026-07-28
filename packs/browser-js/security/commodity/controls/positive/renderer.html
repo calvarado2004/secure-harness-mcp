@@ -1,0 +1,14 @@
+<html><body><script>
+localStorage.setItem('token', authToken);
+// THE REGRESSION CASE: sink and interpolation never share a line. A helper returns the
+// markup and the caller assigns it, which is how the real renderer in this corpus is
+// written and what a line-based lane silently missed.
+function card(v) {
+  return `
+    <div class="card">
+      <img src="${v.image}" alt="pic">
+      <div class="title">${v.make} ${v.model}</div>
+    </div>`;
+}
+grid.innerHTML = items.map(card).join('');
+</script></body></html>

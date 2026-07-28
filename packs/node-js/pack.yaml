@@ -1,0 +1,20 @@
+id: node-js
+version: 0
+tier: commodity
+runtime: node-js
+status: detect-only
+description: Node.js — DETECTION ONLY, no lanes yet.
+
+# THIS RUNTIME IS DECLARED BUT NOT IMPLEMENTED, AND THAT IS THE POINT.
+# With this file present, a repository containing Node.js is inventoried as "N files, runtime
+# node-js, 0 lanes loaded" -- UNREAD. Without it, those files match no runtime and it is far too
+# easy for the total to read as clean. A blind spot you can see is a different thing from one
+# you cannot, and the whole discipline of this harness is refusing to let the second kind exist.
+#
+# When lanes are added: SAME EXTENSIONS AS THE BROWSER, DIFFERENT EXECUTION ENVIRONMENT: child_process, fs, vm. Detection must use evidence, not extension
+
+detect:
+  extensions: [.js,.mjs,.cjs,.ts]
+  filenames: [package.json]
+
+unmeasured_verdict: no_lane

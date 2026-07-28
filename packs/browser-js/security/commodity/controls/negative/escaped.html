@@ -1,0 +1,11 @@
+<html><head><meta http-equiv="Content-Security-Policy" content="default-src 'self'">
+</head><body><script>
+grid.textContent = v.make;
+el.innerHTML = `<div>${escapeHtml(v.make)}</div>`;
+el.innerHTML = `<div>${Number(v.year)}</div>`;
+el.innerHTML = `<span>${v.is_new ? 'New' : 'Used'}</span>`;
+el.innerHTML = `<div>${v.mileage?.toLocaleString() || 0}</div>`;
+el.innerHTML = `<div>${list.length}</div>`;
+el.innerHTML = `<option ${m === cur ? 'selected' : ''}>x</option>`;
+sessionStorage.setItem('theme', 'dark');
+</script></body></html>

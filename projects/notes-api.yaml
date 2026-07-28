@@ -1,0 +1,63 @@
+id: projects/notes-api
+version: 1
+tier: project
+description: Single-file Flask team note-sharing API — the greenfield subject of study 1.
+
+# The 5-part build spec is webapp-experiment/parts.json; PROMPTS.md has the verbatim prompts.
+# This profile is tasks/notes-api.yaml relocated into the pack system. It loads no
+# authorization pack: the subject is a single Flask module, not a FastAPI tree, and there is
+# no Flask authorization pack yet. That is a DECLARED gap — its authorization axis is unread,
+# not clean, and the inventory says so.
+
+runtimes: auto
+axes: [security]
+frameworks: []
+
+facts: {}
+
+deployment:
+  orchestrator: compose
+  network: internal
+  published: [nginx]
+  secrets_from: environment
+
+context_reweight:
+  - rule: B104
+    when: {network: internal}
+    sev: LOW
+    why: the app runs on an internal compose network with only the nginx proxy published;
+      binding 0.0.0.0 is how it is reached. Real advice for a host process, wrong here.
+
+spec:
+  routes:
+  - /admin/backup
+  - /admin/users
+  - /calc
+  - /download
+  - /export/<id>
+  - /fetch
+  - /health
+  - /login
+  - /notes
+  - /notes/<id>
+  - /notes/<id>/share
+  - /notes/<id>/upload
+  - /notes/import
+  - /register
+  probe_identity:
+    username: user1
+    password: Str0ng!Passw0rd-2026
+    password_long: Str0ng!Passw0rd-2026-Reserve-Phrase
+  services:
+    object_store:
+      kind: s3
+      image: minio/minio
+      bucket: notes
+    mail:
+      kind: smtp
+      image: axllent/mailpit
+    database:
+      kind: postgres
+      image: postgres:16-alpine
+  compose: docker-eval/compose/docker-compose.yml
+  probe: docker-eval/compose/probe.py

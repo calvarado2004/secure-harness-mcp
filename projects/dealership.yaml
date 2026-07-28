@@ -1,0 +1,76 @@
+id: projects/dealership
+version: 1
+tier: project
+description: Car dealership management system — the brownfield subject of study 2.
+
+# THIS FILE IS THE WHOLE POINT OF THE PACK SYSTEM.
+# Everything here is something only the people who own this application know. None of it is
+# guessable from the source, and all of it used to live as module constants inside
+# oracles/repo_authz.py, welded to the FastAPI AST walker that has nothing to do with any of
+# it. Retargeting the harness at a new repository should mean writing a file like this one
+# and changing no harness code. That claim is measurable, and measuring it is the point of
+# the next study.
+
+runtimes: auto          # inventory the tree and load the packs for what is actually there
+axes: [security, authorization, practice]
+frameworks: [fastapi]
+# org: acme            # uncomment to layer a company's internal standards on top
+
+# ---------------------------------------------------------------------------
+# FACTS. Required by the packs that declare `requires_facts`. The loader refuses to resolve
+# this profile if one is missing, and names it — because a lane that silently defaults these
+# answers "authorized" about code it never understood.
+# ---------------------------------------------------------------------------
+facts:
+  # Which dependencies establish identity in this stack. For FastAPI, "is this route
+  # authenticated" then becomes a question about the handler's dependency list, which is
+  # forty lines of AST away. That is the entire argument for customising a harness: the
+  # generic lanes are commodity and nearly worthless on this repository, and the
+  # project-specific lane is cheap and finds everything that matters.
+  auth_deps: [get_current_user, get_current_active_user, require_user, require_admin,
+              get_admin_user, verify_token]
+
+  # Routes that are anonymous ON PURPOSE. A lane that cannot be told this flags the login
+  # endpoint for not requiring a login, and the practitioner learns to ignore it — which is
+  # how a rule set dies. Declaring public surface explicitly turns an omission into a
+  # decision someone signed.
+  public_routes: ["/auth/login", "/auth/register", "/auth/token", "/health", "/"]
+
+  # Resources that are not public in this application.
+  sensitive_models: [Customer, Employee, Sale, User, Appointment]
+
+  # Credentials for the services in this project's OWN dev stack. A compose file ships with
+  # working local values by design and the deployment overrides them; flagging those HIGH
+  # buries the one default that actually matters under noise the practitioner is right to
+  # ignore. They stay VISIBLE at LOW rather than being suppressed — a pricing decision, not
+  # a blind spot. (See `deployment:` below: this is the same idea, generalised.)
+  local_stack_creds: [postgres_password, postgres_user, minio_access_key,
+                      minio_secret_key, minio_root_password]
+
+# ---------------------------------------------------------------------------
+# DEPLOYMENT CONTEXT. Where this code runs changes what a finding means.
+# ---------------------------------------------------------------------------
+deployment:
+  orchestrator: compose
+  network: internal          # the app has no host or internet egress
+  published: [nginx]         # only the proxy is reachable from outside
+  secrets_from: environment
+
+# A pack may reweight against that context; so may a project, here, with the same rules and
+# the same audit trail. `why` is not optional — an unexplained reweight is indistinguishable
+# from an unjustified suppression six months later.
+context_reweight:
+  - rule: B104
+    when: {network: internal}
+    sev: LOW
+    why: binding 0.0.0.0 is how a containerised service on an internal network is reached
+      through the proxy; the finding is real advice for a host process and wrong advice
+      here. It stays visible at LOW rather than being suppressed, so that a change to
+      `network:` brings it back at full weight.
+
+# ---------------------------------------------------------------------------
+# The functional/fidelity surface. Same role as tasks/notes-api.yaml had.
+# ---------------------------------------------------------------------------
+spec:
+  routes_file: oracles/repo_fidelity.py     # 22 checks over the API surface
+  services: [postgres, minio]

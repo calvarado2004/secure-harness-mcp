@@ -1,0 +1,9 @@
+<!-- Negative control paired to the html/no-csp suppression below.
+     A suppression is scoped to ONE rule. This document has no CSP (correctly silent, that
+     is what Acme suppressed) but DOES build markup by interpolation, and that must still be
+     reported. If a future edit to the suppression widens it, this control goes quiet and
+     packtest fails. -->
+<html><body><script>
+function row(u) { return `<td title="${u.note}">${u.name}</td>`; }
+table.innerHTML = users.map(row).join('');
+</script></body></html>

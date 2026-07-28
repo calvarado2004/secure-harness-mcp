@@ -1,0 +1,62 @@
+id: general/practice
+version: 1
+tier: commodity
+axis: practice
+description: Engineering invariants no scanner encodes. Language-independent doctrine.
+
+# THE ADMISSION TEST FOR THIS AXIS
+# A security rule must answer "can you state the attack?". A practice rule must answer the
+# analogous question: CAN YOU STATE THE FAILURE THIS PREVENTS? Every rule below carries a
+# `failure`, and packtest refuses to load this pack if any rule ships without one. Without
+# that discipline this axis decays into a style linter, produces precisely the
+# non-exploitable load this project criticises, and teaches the model to write suppressions.
+#
+# THE RULES ARE DECLARED HERE; THE DETECTORS LIVE PER LANGUAGE.
+# "If you move where state lives, move the read path too" is true in every runtime. How you
+# SEE it is not: in the browser it is localStorage.getItem vs setItem, on a server it might
+# be a config key written by nobody. So the rule id, its severity and its failure statement
+# are declared once, here, and each language pack `binds` the ones it can detect. That is
+# what keeps the weights comparable and stops the same invariant being invented twice under
+# two names.
+#
+# PROVENANCE IS NOT DECORATION. Every `failure` below records the run it was bought with.
+# A rule nobody can trace to a real defect is the first one to delete.
+
+rules:
+  practice/half-wired-state:
+    sev: HIGH
+    remedy: >-
+      wire the read and the write together, or remove both; a persistence path that only half
+      exists silently loses state
+    failure: >-
+      a user is logged out on every page load while every security check still passes
+      (observed: two of three arms, gen-1)
+  practice/write-without-read:
+    sev: HIGH
+    remedy: >-
+      read the value where the session is restored, not only where it is stored
+    failure: >-
+      the fix looks correct in review and does nothing at runtime (observed: Opus 4.8 wrote a
+      Secure/SameSite cookie it never read, gen-1)
+  practice/unchecked-response:
+    sev: MEDIUM
+    remedy: >-
+      check `res.ok` (or the status) before using the body, and surface the failure to the user
+    failure: >-
+      a 500 from the API renders as an empty page rather than an error, so outages look like
+      missing data
+  practice/divergent-resource-access:
+    sev: HIGH
+    remedy: >-
+      route every path that returns the resource through one authorization helper, so a new
+      path cannot forget it
+    failure: >-
+      the forgotten second path becomes the vulnerability -- an IDOR shipped through /export in
+      this project's other study while the primary read path was correctly guarded
+  practice/inconsistent-render-path:
+    sev: MEDIUM
+    remedy: >-
+      render through a single helper so a new call site cannot pick the unsafe path by accident
+    failure: >-
+      the one render you forget to escape is the stored XSS; mixed conventions guarantee there
+      will eventually be one

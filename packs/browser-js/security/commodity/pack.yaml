@@ -1,0 +1,108 @@
+id: browser-js/security
+version: 1
+tier: commodity
+runtime: browser-js
+axis: security
+description: Browser sink lane — dynamic HTML sinks, session storage, and document policy.
+
+# SCOPE, STATED PLAINLY BECAUSE A HAND-WRITTEN LANE IS THE EASIEST THING TO OVER-CLAIM
+# This is a SINK lane, not a taint engine. It flags a dynamic HTML sink fed by an
+# interpolation that is not demonstrably inert, plus two document-level defects. It does not
+# prove reachability. See LIMITS.md -- it is part of the pack, not an afterthought.
+#
+# EVERY SUPPRESSION HERE IS PAIRED WITH A NEGATIVE CONTROL, AND THAT IS NOT CEREMONY.
+# Writing the `inert` list below, the negative controls caught two bugs in the rule within
+# minutes of each other: an `escapeHtml(` pattern that stopped at the opening paren, and a
+# `\s*` that backtracked so the "not a template literal" guard never fired and every finding
+# was counted twice -- weighted load 91 where the truth was 43. Inflated load is not a
+# harmless bug in a project whose thesis is that analyzer load is a poor proxy for risk.
+
+lanes:
+  frontend: {engine: internal_regex, detector: repo_security.scan_frontend, input: file}
+
+patterns:
+  # dynamic HTML sinks
+  sinks: (innerHTML|outerHTML|insertAdjacentHTML|document\.write(?:ln)?)
+  # anything that looks like markup opening a tag
+  markup: <[a-zA-Z/]
+  # session-ish key names in web storage
+  session_key: (localStorage|sessionStorage)\s*\.\s*setItem\s*\(\s*['"][^'"]*(token|jwt|auth|session)
+
+  # INTERPOLATIONS THAT CANNOT CARRY MARKUP. Each alternative is a suppression, and each is
+  # paired below. toLocaleString/toFixed are here deliberately: a lane that flags number
+  # formatting generates exactly the non-exploitable load this project criticises.
+  # The pattern is stored EXACTLY as the lane compiles it, on one line, and
+  # selftest_packs asserts it is character-for-character equal to the compiled regex.
+  # It was multi-line and readable here for about an hour; the readable version was a
+  # DIFFERENT REGEX (a block scalar keeps the newlines) and nothing was checking. A
+  # value duplicated into config with no control asserting equality is not
+  # configuration, it is a second source of truth waiting to drift.
+  inert: '^\s*(?:\d+(?:\.\d+)?|[''\"][^''\"<>&]*[''\"]|(?:escapeHtml|escape|encodeURIComponent|encodeURI|Number|parseInt|parseFloat)\s*\(.*\)|[\w$.?\[\]]+\s*\.\s*(?:toLocaleString|toFixed)\s*\([^)]*\)(?:\s*\|\|\s*\d+)?|[\w$.?\[\]]+\s*\.\s*length|[^?]+\?\s*[''\"][^''\"<>]*[''\"]\s*:\s*[''\"][^''\"<>]*[''\"])\s*$'
+
+rules:
+  js/html-from-interpolation:
+    sev: HIGH
+    remedy: build the node with textContent / createElement, or escape each interpolated
+      value; do not blocklist payloads
+    attack: an attacker stores `<img src=x onerror=...>` in any field the renderer prints;
+      it executes in every viewer's session, with access to whatever the page can read
+    overreach: >-
+      a renderer that interpolates values the SERVER fully controls -- an enum, an integer id,
+      a formatted price -- is not injectable, and demanding textContent everywhere makes
+      ordinary rich UI impossible. The balance is escaping at the boundary, not banning
+      templates. That is why the `inert` list exists and why it is as long as it is.
+  js/attribute-injection:
+    sev: MEDIUM
+    remedy: set the attribute with setAttribute on a value you control, or escape quotes and
+      validate the URL scheme
+    attack: the interpolated value closes the attribute and opens an event handler, or
+      supplies a `javascript:` URL
+    overreach: >-
+      interpolating into `class` or `data-*` from a known set is normal and safe. Validating
+      every attribute equally means flagging most real components. The ones that matter are
+      URL-bearing (`src`, `href`) and event handlers.
+  js/dom-xss-sink:
+    sev: HIGH
+    remedy: assign with textContent, or escape before innerHTML
+    attack: a value that crossed a trust boundary reaches an HTML sink directly
+    overreach: >-
+      assigning a constant template to innerHTML is how many components initialise. A blanket
+      ban pushes teams to wrap everything in a sanitiser they then stop thinking about -- which
+      is worse, because the wrapper looks like a control and is not audited.
+  js/session-token-in-web-storage:
+    sev: MEDIUM
+    remedy: hold the session in an HttpOnly, Secure, SameSite cookie so a script-level
+      compromise cannot read it
+    attack: any XSS on any page of the origin reads the token and replays it; this is the
+      second half of the dealership chain, and it is why the XSS above is rated HIGH
+    overreach: >-
+      an HttpOnly cookie is not available to every architecture: cross-origin SPAs, native
+      clients and some third-party embeds genuinely cannot use one. Demanding it there produces
+      a suppression, not a fix. If the token must be script-readable, shorten its lifetime and
+      bind it to a device or IP instead.
+  html/no-csp:
+    sev: LOW
+    remedy: serve a CSP that forbids inline script, or set it in the web server
+    attack: none on its own -- this is defence in depth, and it is weighted LOW because a
+      rule you cannot attach an attack to must not be allowed to dominate the total
+    overreach: >-
+      a strict CSP breaks inline scripts, analytics and third-party widgets on contact. Rolling
+      one out means report-only first, then tightening. Demanding a perfect policy on day one
+      is how a team ends up disabling CSP entirely -- which is the outcome this rule exists to
+      prevent.
+controls:
+  positive:
+    # The regression case: sink and interpolation never share a line. A helper returns the
+    # markup and the caller assigns it -- how the real renderer in this corpus is written,
+    # and what a line-based lane silently missed.
+    - file: controls/positive/renderer.html
+      must_flag: [js/html-from-interpolation, js/attribute-injection,
+                  js/session-token-in-web-storage, html/no-csp]
+  negative:
+    - file: controls/negative/escaped.html
+      must_not_flag: [js/html-from-interpolation, js/session-token-in-web-storage,
+                      html/no-csp]
+      covers: [textContent is not a sink, escaped/numeric/ternary interpolation is inert,
+               a non-session storage key is not a finding, a document with a CSP is not flagged]
+
+limits: LIMITS.md

@@ -1,0 +1,38 @@
+id: browser-js/practice
+version: 1
+tier: commodity
+runtime: browser-js
+axis: practice
+description: Browser detectors for the cross-language practice rules.
+
+# THIS PACK DEFINES NO RULES. It BINDS rules declared in packs/general/practice to detectors
+# that work in a browser. "If you move where state lives, move the read path too" is true in
+# every runtime; `localStorage.getItem` vs `setItem` is how you SEE it in this one.
+#
+# The split matters for a reason that only shows up at the second language: if each runtime
+# declared its own rule id for the same invariant, the same defect would carry two names and
+# two weights, and a repository with a Python module and a JS module would score the identical
+# mistake twice. Binding keeps one rule, one weight, many detectors.
+
+binds:
+  - practice/half-wired-state
+  - practice/write-without-read
+  - practice/unchecked-response
+  - practice/inconsistent-render-path
+
+lanes:
+  practice_browser: {engine: internal_regex, detector: repo_practice.scan_practice, input: tree}
+
+controls:
+  positive:
+    - file: controls/positive/bad
+      must_flag: [practice/half-wired-state, practice/unchecked-response,
+                  practice/inconsistent-render-path]
+  negative:
+    - file: controls/negative/good
+      must_not_flag: [practice/half-wired-state, practice/unchecked-response,
+                      practice/inconsistent-render-path]
+      covers: [a key written and read is wired, a checked fetch is not a finding,
+               one render convention in a file is not a divergence]
+
+limits: LIMITS.md

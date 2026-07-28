@@ -1,0 +1,98 @@
+id: python/authorization/fastapi
+version: 1
+tier: framework
+runtime: python
+axis: authorization
+description: Authorization lane for FastAPI — the defects a generic analyzer structurally cannot report.
+
+# WHY THIS PACK EXISTS
+# Run the commodity engines over the dealership repository and you get one finding (a false
+# positive on the string "bearer") from bandit and zero from semgrep -- while the application
+# serves its entire customer table to anonymous callers and lets anyone register as an
+# administrator. That is not a failure of those tools. "Is this endpoint authorized?" has no
+# general answer: it depends on who is supposed to be able to do what, which lives in the
+# project's head, not in its syntax.
+#
+# WHY IT IS A *FRAMEWORK* PACK AND NOT A PROJECT ONE
+# Two different things were tangled in one file before this split. How a route, a dependency
+# and an inbound schema are EXPRESSED is a fact about FastAPI, true for every FastAPI project
+# ever written -- that is this pack, and it is reusable. WHICH dependency establishes identity
+# here, and WHICH routes are public on purpose, is a fact about one company's one application
+# -- that is `requires_facts`, supplied by the org or project layer. Neither is guessable from
+# the other, and only one of them is worth writing twice.
+
+# The facts this lane cannot work without. The loader refuses to resolve a profile that
+# loads this pack and supplies none of them, with a message naming the missing ones --
+# because a lane that silently defaults them answers "authorized" about code it never
+# understood.
+requires_facts:
+  - auth_deps         # dependencies that establish identity in this stack
+  - public_routes     # endpoints anonymous ON PURPOSE
+  - sensitive_models  # resources that are not public in this application
+
+lanes:
+  authz: {engine: internal_ast, detector: repo_authz.scan_authz, input: tree}
+
+# How FastAPI expresses things. This is the reusable half.
+framework:
+  route_decorator_methods: [get, post, put, delete, patch]
+  write_methods: [POST, PUT, DELETE, PATCH]
+  dependency_call: Depends
+  router_constructors: [APIRouter, FastAPI]
+  inbound_schema_base: BaseModel
+  # class-name substrings that mark a schema as client-supplied rather than server-emitted
+  inbound_name_hints: [create, update, in, register, request]
+
+rules:
+  authz/unauthenticated-data-access:
+    sev: HIGH
+    remedy: >-
+      add the project's identity dependency to this handler (e.g. `user: User =
+      Depends(get_current_user)`); if the endpoint is genuinely public, say so explicitly
+      rather than by omission
+    attack: >-
+      an anonymous caller requests the endpoint and receives records the application intended
+      to show only to authenticated users
+  authz/authenticated-but-unauthorized:
+    sev: MEDIUM
+    remedy: >-
+      authorize on the caller's role or on ownership of the object being modified, and return
+      403 when it fails; authentication is not authorization
+    attack: >-
+      any registered user -- including one who self-registered seconds ago -- modifies or
+      deletes another user's records
+  authz/client-settable-privilege:
+    sev: HIGH   # MEDIUM when the field is not in the general `hard_priv` vocabulary
+    remedy: >-
+      remove the field from the inbound schema and set it server-side; privilege must never be
+      a request parameter
+    attack: >-
+      the attacker POSTs a role field to the public registration endpoint and is an
+      administrator (this is E5, the exploit that survives every arm in study 2)
+  authz/shipped-default-credential:
+    sev: HIGH   # LOW when the name is in the project's `local_stack_creds`
+    remedy: >-
+      require the value from the environment and refuse to start when it is absent, rather than
+      falling back to a literal
+    attack: >-
+      a deployment that forgets to override the default is secured with a value that is printed
+      in the public source tree
+
+limits: LIMITS.md
+
+controls:
+  positive:
+    # Every rule this pack declares fires on this tree. These four defects are exactly the
+    # ones the commodity engines report as ZERO on the real subject.
+    - file: controls/positive/unguarded
+      must_flag: [authz/unauthenticated-data-access, authz/authenticated-but-unauthorized,
+                  authz/client-settable-privilege, authz/shipped-default-credential]
+  negative:
+    - file: controls/negative/guarded
+      must_not_flag: [authz/unauthenticated-data-access,
+                      authz/authenticated-but-unauthorized,
+                      authz/client-settable-privilege]
+      covers: [a declared public route is not an omission,
+               using the principal to scope a query IS authorization,
+               an inbound schema without a privilege field is fine,
+               a write that checks the role is not a finding]

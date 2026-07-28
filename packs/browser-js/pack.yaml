@@ -1,0 +1,24 @@
+id: browser-js
+version: 1
+tier: commodity
+runtime: browser-js
+description: The browser — HTML and the JavaScript inside or beside it.
+
+# THE REASON THIS RUNTIME EXISTS AS A SEPARATE CELL
+# bandit and CodeQL's Python suites scan `.py` and never open `frontend/index.html`. In the
+# dealership subject the most reachable vulnerability in the whole project -- a stored XSS in
+# the vehicle renderer, chained to a session JWT in localStorage -- was therefore invisible to
+# the loop BY CONSTRUCTION, not by accident. A repository whose profile lists only `python`
+# is not "clean in the browser"; it is unread there, and the inventory says so.
+
+detect:
+  extensions: [.html, .htm, .js, .mjs, .jsx]
+
+scan:
+  skip_dirs: [dist, build, vendor]
+  # Minified bundles defeat line-based reporting and every remedy points at column 1 of a
+  # 40,000-character line. They are excluded here as a DECLARED limitation: the inventory
+  # counts them as unread rather than pretending they were scanned.
+  skip_globs: ["*.min.js", "*.bundle.js"]
+
+unmeasured_verdict: unreadable

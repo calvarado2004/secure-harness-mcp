@@ -1,0 +1,36 @@
+id: orgs/acme
+version: 1
+tier: org
+description: Acme Corp internal engineering standards — an EXAMPLE overlay.
+
+# WHAT AN ORG LAYER IS FOR
+# A company does not fork the Python security pack. It says: these are our defaults, this is
+# how OUR stack establishes identity, this rule matters more to us than the commodity tier
+# thinks, and this one we have handled elsewhere. Four operations, all recorded:
+#
+#   facts:            supply what every project here has in common
+#   rules:            add a rule the company cares about (needs its own detector + control)
+#   reweight:         move an existing rule on the shared severity scale
+#   suppress:         stand a rule down — with a justification and a paired negative control
+#
+# What an org layer may NEVER do is delete or redefine a rule a higher tier owns. The loader
+# refuses, and it refuses loudly, because the alternative is a policy that quietly promises
+# less than it says while every total still trends down.
+
+# Every Acme service uses the same auth helpers, so projects do not repeat them. A project
+# that needs more can add to this — later layers extend a list rather than replacing it.
+facts:
+  auth_deps: [require_user, require_admin, acme_session]
+
+# Acme has been burned by token theft. The commodity tier rates web-storage tokens MEDIUM;
+# here it is HIGH, and the history records who moved it.
+reweight:
+  js/session-token-in-web-storage: HIGH
+
+suppress:
+  - rule: html/no-csp
+    justification: >-
+      Acme serves Content-Security-Policy from the edge proxy for every origin, so a
+      per-document meta tag is redundant and the lane cannot see the header. Reviewed by
+      platform-security 2026-07; revisit if any service is ever served outside the edge.
+    negative_control: controls/still-caught.html
