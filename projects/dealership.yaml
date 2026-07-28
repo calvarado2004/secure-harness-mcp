@@ -50,23 +50,32 @@ facts:
 # ---------------------------------------------------------------------------
 # DEPLOYMENT CONTEXT. Where this code runs changes what a finding means.
 # ---------------------------------------------------------------------------
+# CORRECTED 2026-07-28 after a Codex scan checked these claims against docker-compose.yml.
+# They were wrong. The file publishes postgres 5432, minio 9000/9001 and the API 8000
+# alongside nginx 8080, and declares no internal network at all. The original values here
+# were copied from the notes-api stack, where they are true, and never checked against this
+# repository. That is not a typo -- it is the exact failure `packs/container/pack.yaml`
+# warns about: deployment context used to talk a finding down is only legitimate if
+# something VERIFIED the deployment, and nothing had.
 deployment:
   orchestrator: compose
-  network: internal          # the app has no host or internet egress
-  published: [nginx]         # only the proxy is reachable from outside
-  secrets_from: environment
+  network: host-published    # every service is reachable from the host
+  published: [nginx, api, postgres, minio]
+  secrets_from: literal-defaults   # config.py ships working values; see the E6 finding
+  verified: false            # no container lane exists yet to check any of this
 
 # A pack may reweight against that context; so may a project, here, with the same rules and
 # the same audit trail. `why` is not optional — an unexplained reweight is indistinguishable
 # from an unjustified suppression six months later.
-context_reweight:
-  - rule: B104
-    when: {network: internal}
-    sev: LOW
-    why: binding 0.0.0.0 is how a containerised service on an internal network is reached
-      through the proxy; the finding is real advice for a host process and wrong advice
-      here. It stays visible at LOW rather than being suppressed, so that a change to
-      `network:` brings it back at full weight.
+# The B104 downgrade that used to live here is DELETED, not edited. It was justified by
+# `network: internal`, which was false. Restoring it needs a container lane that reads the
+# compose file and confirms the claim -- until then the finding stands at full weight, which
+# is the correct answer for a service whose port really is published to the host.
+#
+# Nothing published changes: B104 does not fire on this repository, so the unjustified
+# reweight was inert. It was still wrong, and it would not have been inert on a subject that
+# binds 0.0.0.0.
+context_reweight: []
 
 # ---------------------------------------------------------------------------
 # The functional/fidelity surface. Same role as tasks/notes-api.yaml had.

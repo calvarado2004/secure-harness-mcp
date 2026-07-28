@@ -124,7 +124,7 @@ class ResolvedPolicy:
 
     def __init__(self, profile_name, packs, rules, vocabulary, facts, severity,
                  scan, suppressed, lanes, deployment=None, spec=None, inventory=None,
-                 runtimes=(), fp_rules=None):
+                 runtimes=(), fp_rules=None, deferred_reweights=None):
         self.profile = profile_name
         self.packs = packs                  # in resolution order
         self.rules = rules                  # rule_id -> dict(sev, remedy, owner, ...)
@@ -133,6 +133,9 @@ class ResolvedPolicy:
         self.severity = severity
         self.scan = scan
         self.fp_rules = fp_rules or {}
+        # Reweights that MATCHED the deployment but were refused because nothing verified
+        # it. Visible, not silent: the report shows what is waiting on evidence.
+        self.deferred_reweights = deferred_reweights or []
         self.suppressed = suppressed        # list of dicts: rule, by, justification
         self.lanes = lanes
         self.deployment = deployment or {}  # where this code runs
@@ -172,7 +175,7 @@ class ResolvedPolicy:
                               self.severity, self.scan, self.suppressed,
                               {k: v for k, v in self.lanes.items()},
                               self.deployment, self.spec, self.inventory, [runtime],
-                              self.fp_rules)
+                              self.fp_rules, self.deferred_reweights)
 
     def lanes_by_runtime(self):
         out = {}
@@ -227,6 +230,8 @@ class ResolvedPolicy:
                        "runtime": p.runtime, "axis": p.axis} for p in self.packs],
             "rules": len(self.rules),
             "suppressed": self.suppressed,
+            "deferred_reweights": self.deferred_reweights,
+            "deployment_verified": self.deployment.get("verified") is True,
         }
 
     @property
@@ -385,7 +390,7 @@ def _all_runtime_packs():
     return out
 
 
-def _apply_context(rules, deployment, entries, where):
+def _apply_context(rules, deployment, entries, where, deferred):
     """Reweight rules against WHERE THE CODE RUNS, with the reason recorded.
 
     Carlos's observation, and it is a real one: a container changes what a finding means.
@@ -397,13 +402,38 @@ def _apply_context(rules, deployment, entries, where):
     The reweight is NOT a suppression: the rule keeps its place, its weight moves, and the
     history says who moved it and why. Change `network:` back to `host` and the finding
     returns at full weight without anyone having to remember it existed.
+
+    AND IT ONLY APPLIES IF SOMETHING VERIFIED THE DEPLOYMENT. `packs/container/pack.yaml`
+    warned that deployment context "must not become a way to talk a finding down -- a
+    finding excused because we run in a container is only fine if a container lane actually
+    verified the container. Otherwise the context is an assertion, not a control." This
+    project then did exactly that: `projects/dealership.yaml` claimed `network: internal,
+    published: [nginx]`, copied from a different subject, while the repository's own
+    docker-compose.yml published postgres, minio and the API to the host. A B104 downgrade
+    rode on that false claim for a day. An external scan caught it, not us.
+
+    So an unverified deployment cannot move any weight. The reweight is not silently
+    dropped -- it is recorded as DEFERRED, with the reason, and surfaces in the report. A
+    claim waiting on evidence and a claim nobody made are different things, and a harness
+    that cannot tell them apart is the thing this whole project is about.
     """
+    verified = deployment.get("verified") is True
     for e in entries:
         rid = _need(e, "rule", f"{where} context_reweight entry")
         if rid not in rules:
             continue                    # a rule this profile does not load; not an error
         cond = e.get("when", {}) or {}
         if not all(deployment.get(k) == v for k, v in cond.items()):
+            continue
+        if not verified:
+            deferred.append({
+                "rule": rid, "by": where, "when": cond, "sev": e.get("sev"),
+                "reason": "the deployment this reweight depends on is not verified "
+                          "(`deployment.verified` is not true), so it is an assertion "
+                          "rather than a control; the rule keeps its full weight"})
+            rules[rid]["history"] = rules[rid]["history"] + [
+                f"context reweight to {e.get('sev')} DEFERRED by {where}: "
+                f"deployment unverified"]
             continue
         if not e.get("why"):
             raise PackError(
@@ -514,9 +544,11 @@ def load_policy(profile="dealership", root=None, extra_packs=()):
 
     # Deployment context: the project's own, then any layer's reweights against it.
     deployment = dict(prof.get("deployment", {}) or {})
+    deferred = []
     for p in chain:
         if p.context_reweight:
-            _apply_context(rules, deployment, p.context_reweight, f"{p.id}@{p.tier}")
+            _apply_context(rules, deployment, p.context_reweight, f"{p.id}@{p.tier}",
+                           deferred)
 
     lanes = {}
     for p in chain:
@@ -530,7 +562,7 @@ def load_policy(profile="dealership", root=None, extra_packs=()):
 
     return ResolvedPolicy(profile, chain, rules, vocabulary, facts, severity, scan,
                           suppressed, lanes, deployment, prof.get("spec", {}), inv,
-                          runtimes, fp_rules)
+                          runtimes, fp_rules, deferred)
 
 
 if __name__ == "__main__":

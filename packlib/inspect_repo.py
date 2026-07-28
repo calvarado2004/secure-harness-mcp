@@ -47,6 +47,10 @@ def inspect(profile, root):
         "rules": len(P.rules),
         "suppressed": P.suppressed,
         "deployment": P.deployment,
+        # An unverified deployment claim is an assertion, not a control. Anything it would
+        # have talked down is listed here instead of quietly applied.
+        "deployment_verified": P.deployment.get("verified") is True,
+        "deferred_reweights": P.deferred_reweights,
     }
 
 
@@ -95,6 +99,8 @@ def guidance(profile, root, path):
         "facts": {k: sorted(v) if isinstance(v, (list, set, frozenset)) else v
                   for k, v in view._facts.items()},
         "deployment": view.deployment,
+        "deployment_verified": view.deployment.get("verified") is True,
+        "deferred_reweights": view.deferred_reweights,
         "suppressed": view.suppressed,
     }
 
@@ -116,6 +122,11 @@ def main(argv):
     print("\nlanes that will run:")
     for rt, lanes in sorted(P.lanes_by_runtime().items()):
         print(f"  {rt:<12} {', '.join(lanes)}")
+    if P.deferred_reweights:
+        print("\nDEFERRED — reweights refused because the deployment is unverified:")
+        for d in P.deferred_reweights:
+            print(f"  {d['rule']} -> {d['sev']} (when {d['when']}) by {d['by']}")
+        print("  The rules keep their full weight until something verifies the deployment.")
     if P.inventory.unread:
         print("\nBLIND SPOTS — files a declared runtime claims but no lane reads:")
         for rt, fs in sorted(P.inventory.unread.items()):

@@ -130,8 +130,15 @@ def inventory(root, detectors, skip_dirs, skip_globs=(), lanes_for=None,
                 continue
             hits = claim(full, detectors)
             if not hits:
-                # Only count files that plausibly hold code. A README is not a blind spot.
-                if os.path.splitext(fn)[1] in _CODEISH or fn in _CODEISH_NAMES:
+                # Report unless the file is plainly an asset or prose. This was an ALLOWLIST
+                # of code-looking extensions, and it under-reported exactly the way an
+                # allowlist always does: `nginx.conf` -- a reverse proxy config that
+                # terminates TLS, sets security headers and decides what is publicly
+                # routable -- was claimed by no runtime AND reported by no inventory,
+                # because `.conf` was not on the list. An external scan noticed it and we
+                # had not. A blind spot that the blind-spot report cannot see is the worst
+                # case this system has.
+                if not _is_asset(fn):
                     inv.unclaimed.append(rel)
                 continue
             if len(hits) > 1 and preferred:
@@ -143,9 +150,25 @@ def inventory(root, detectors, skip_dirs, skip_globs=(), lanes_for=None,
     return inv
 
 
-# Extensions that look like code. A file with one of these that nothing claims is a real
-# blind spot worth printing; a .png is not.
-_CODEISH = {".rb", ".php", ".rs", ".swift", ".kt", ".scala", ".cs", ".m", ".pl", ".lua",
-            ".r", ".jl", ".ex", ".exs", ".erl", ".clj", ".hs", ".ml", ".vue", ".svelte",
-            ".sql", ".proto", ".tf", ".ps1", ".bat", ".cmd", ".groovy", ".gradle"}
-_CODEISH_NAMES = {"Jenkinsfile", "Procfile", "Vagrantfile"}
+# A DENYLIST, deliberately. Anything that is not obviously a binary asset or prose gets
+# reported when nothing claims it -- configuration files decide security posture as surely
+# as code does, and there is no finite list of the ones that matter. The cost of the other
+# direction is a few noisy lines; the cost of this direction was a reverse-proxy config
+# nobody could see.
+_ASSET_EXT = {
+    # images / media / fonts
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp", ".bmp", ".tiff",
+    ".mp3", ".mp4", ".mov", ".avi", ".webm", ".wav",
+    ".woff", ".woff2", ".ttf", ".otf", ".eot",
+    # archives / compiled artifacts
+    ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar", ".whl", ".jar", ".war",
+    ".so", ".dylib", ".dll", ".exe", ".bin", ".o", ".a", ".class", ".pyc", ".pyo",
+    ".pdb", ".db", ".sqlite", ".sqlite3",
+    # prose and lockfiles: real, but not a security surface anyone reads with a lane
+    ".md", ".rst", ".txt", ".csv", ".pdf", ".lock",
+}
+_ASSET_NAMES = {".DS_Store", ".gitkeep", ".gitattributes", "LICENSE", "NOTICE"}
+
+
+def _is_asset(fn):
+    return os.path.splitext(fn)[1].lower() in _ASSET_EXT or fn in _ASSET_NAMES

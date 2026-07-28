@@ -309,7 +309,7 @@ def merge_semantics():
 
         # --- deployment context
         _profile("ctx", "facts: {owner: platform}\n"
-                        "deployment: {network: internal}\n"
+                        "deployment: {network: internal, verified: true}\n"
                         "context_reweight:\n  - rule: toy/leak\n"
                         "    when: {network: internal}\n    sev: LOW\n"
                         "    why: unreachable from outside the internal network\n")
@@ -321,7 +321,7 @@ def merge_semantics():
                   for h in P.rules["toy/leak"]["history"]))
 
         _profile("ctx2", "facts: {owner: platform}\n"
-                         "deployment: {network: host}\n"
+                         "deployment: {network: host, verified: true}\n"
                          "context_reweight:\n  - rule: toy/leak\n"
                          "    when: {network: internal}\n    sev: LOW\n"
                          "    why: unreachable from outside the internal network\n")
@@ -329,8 +329,37 @@ def merge_semantics():
               load_policy("ctx2").rules["toy/leak"]["sev"] == "HIGH",
               "change the deployment and the finding comes back at full weight")
 
+        # THE GUARD BOUGHT BY AN EXTERNAL SCAN. An unverified deployment is an assertion,
+        # not a control, and must not be able to move any weight. It is recorded as
+        # deferred rather than dropped: "waiting on evidence" and "nobody claimed it" are
+        # different states and a harness that conflates them is the thing being criticised.
+        _profile("unver", "facts: {owner: platform}\n"
+                          "deployment: {network: internal}\n"
+                          "context_reweight:\n  - rule: toy/leak\n"
+                          "    when: {network: internal}\n    sev: LOW\n"
+                          "    why: unreachable from outside\n")
+        P = load_policy("unver")
+        check("an UNVERIFIED deployment cannot lower a rule's weight",
+              P.rules["toy/leak"]["sev"] == "HIGH",
+              "the claim matched, and was refused for lack of evidence")
+        check("...and the refusal is RECORDED as deferred, not silently dropped",
+              len(P.deferred_reweights) == 1
+              and P.deferred_reweights[0]["rule"] == "toy/leak",
+              P.deferred_reweights[0]["reason"][:60] if P.deferred_reweights else "MISSING")
+        check("...and the manifest says the deployment was unverified",
+              P.manifest["deployment_verified"] is False)
+
+        _profile("ver", "facts: {owner: platform}\n"
+                        "deployment: {network: internal, verified: true}\n"
+                        "context_reweight:\n  - rule: toy/leak\n"
+                        "    when: {network: internal}\n    sev: LOW\n"
+                        "    why: a container lane confirmed the network is internal\n")
+        P = load_policy("ver")
+        check("a VERIFIED deployment may reweight",
+              P.rules["toy/leak"]["sev"] == "LOW" and not P.deferred_reweights)
+
         _profile("ctx3", "facts: {owner: platform}\n"
-                         "deployment: {network: internal}\n"
+                         "deployment: {network: internal, verified: true}\n"
                          "context_reweight:\n  - rule: toy/leak\n"
                          "    when: {network: internal}\n    sev: LOW\n")
         expect_refused("a context reweight with no `why` is refused",
@@ -405,6 +434,14 @@ def routing():
         check("a file no runtime claims is reported as a blind spot",
               any(f.endswith(".sql") for f in inv.unclaimed) or "sql" in inv.by_runtime,
               f"unclaimed: {inv.unclaimed}")
+        # A config file no runtime claims must be REPORTED. `nginx.conf` decides what is
+        # publicly routable and which security headers are set; it was invisible to the
+        # blind-spot report because that report used an allowlist of code extensions.
+        check("an unclaimed CONFIG file is reported, not filtered out by an allowlist",
+              any(f.endswith("nginx.conf") for f in inv.unclaimed),
+              f"unclaimed: {inv.unclaimed}")
+        check("...while binary assets are still not reported as blind spots",
+              not any(f.endswith((".jpg", ".png")) for f in inv.unclaimed))
     else:
         skip("blind-spot reporting on the brownfield subject",
              "the subject repository is not part of the standalone distribution")
