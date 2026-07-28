@@ -434,17 +434,31 @@ def routing():
         check("a file no runtime claims is reported as a blind spot",
               any(f.endswith(".sql") for f in inv.unclaimed) or "sql" in inv.by_runtime,
               f"unclaimed: {inv.unclaimed}")
-        # A config file no runtime claims must be REPORTED. `nginx.conf` decides what is
-        # publicly routable and which security headers are set; it was invisible to the
-        # blind-spot report because that report used an allowlist of code extensions.
-        check("an unclaimed CONFIG file is reported, not filtered out by an allowlist",
-              any(f.endswith("nginx.conf") for f in inv.unclaimed),
-              f"unclaimed: {inv.unclaimed}")
-        check("...while binary assets are still not reported as blind spots",
-              not any(f.endswith((".jpg", ".png")) for f in inv.unclaimed))
+        # `nginx.conf` used to be invisible twice over: no runtime claimed it, and the
+        # unclaimed report filtered it out because `.conf` was not on an allowlist of code
+        # extensions. Both are fixed, so the assertion is now that it is READ.
+        check("the config file that was invisible to both is now claimed and read",
+              any(f.endswith("nginx.conf") for f in inv.by_runtime.get("nginx", [])),
+              f"nginx runtime: {inv.by_runtime.get('nginx')}")
+
     else:
         skip("blind-spot reporting on the brownfield subject",
              "the subject repository is not part of the standalone distribution")
+
+    # The denylist itself is tested synthetically, so this control does not quietly change
+    # meaning when a new runtime starts claiming the file it used to be written around --
+    # which is exactly what just happened to its first version, and a control whose meaning
+    # drifts is worse than no control because it still reports green.
+    with tempfile.TemporaryDirectory() as td:
+        open(os.path.join(td, "haproxy.cfg"), "w").write("frontend f\n")
+        open(os.path.join(td, "photo.jpg"), "wb").write(b"\xff\xd8\xff")
+        open(os.path.join(td, "NOTES.md"), "w").write("# notes\n")
+        from . import detect as _d
+        synth = _d.inventory(td, {}, skip_dirs=set())
+        check("an unclaimed CONFIG file is reported (denylist, not an allowlist)",
+              "haproxy.cfg" in synth.unclaimed, f"unclaimed: {sorted(synth.unclaimed)}")
+        check("...while binary assets and prose are not reported as blind spots",
+              not {"photo.jpg", "NOTES.md"} & set(synth.unclaimed))
 
 
 def main():

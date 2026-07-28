@@ -1,0 +1,26 @@
+id: nginx
+version: 1
+tier: commodity
+runtime: nginx
+description: The edge — reverse proxy configuration, which decides what is reachable at all.
+
+# THIS RUNTIME WAS FOUND BY THE INVENTORY REPORTING ITS OWN BLIND SPOT.
+# `nginx.conf` was the one file in the brownfield subject that no runtime claimed. It was
+# invisible twice over: no lane read it, and the unclaimed-file report used an allowlist of
+# code extensions that `.conf` was not on. An external agent scanning the repo through this
+# harness listed it; we had not. The runtime exists because the report was fixed, which is
+# the intended way for this system to grow.
+#
+# The edge answers the same question the authorization lane asks -- what can an anonymous
+# caller reach -- one layer further out, where the answer can silently disagree with the
+# application's intent. On this subject it does: FastAPI generates /docs and /openapi.json,
+# nginx forwards them, and nobody decided that.
+
+detect:
+  filenames: [nginx.conf, default.conf]
+  content_match:
+    - pattern: '^\s*(server|location|upstream)\s'
+      extensions: [.conf]
+      requires: '\{'
+
+unmeasured_verdict: unreadable

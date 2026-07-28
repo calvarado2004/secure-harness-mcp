@@ -1,0 +1,78 @@
+id: python/security/fastapi
+version: 1
+tier: framework
+runtime: python
+axis: security
+description: FastAPI-specific security — defects that live in how the framework BINDS parameters.
+
+# WHY A FRAMEWORK-TIER SECURITY PACK
+# The commodity Python lanes look for dangerous constructs. This one looks at framework
+# semantics, and the difference is the whole argument for customising a harness. The defect
+# that motivated it is one line with nothing wrong in it:
+#
+#     def login(username: str, password: str, db=Depends(get_db)):
+#
+# A scalar-annotated parameter that is not a path parameter and carries no Body/Form/Header
+# marker is a QUERY parameter in FastAPI. The password travels in the URL -- browser
+# history, the Referer header, nginx access logs, every monitoring pipeline downstream.
+# bandit sees no pattern, the authorization lane sees a deliberately public endpoint, and a
+# dataflow engine sees a value that never reaches a sink. It was found by an external agent
+# scanning this repository through this harness, and no lane here could see it.
+
+requires_facts:
+  # Only the introspection rule needs it. The lane is explicit about this: without the
+  # declared public surface that rule is SKIPPED rather than guessed, because "is this
+  # meant to be public" is exactly the question only the project can answer.
+  - public_routes
+
+lanes:
+  fastapi_sec: {engine: internal_ast, detector: repo_fastapi.scan_fastapi, input: tree}
+
+rules:
+  py/credential-in-query:
+    sev: HIGH
+    remedy: >-
+      accept credentials in a request body: declare a Pydantic model parameter, or use
+      `Form(...)` for a form post (which is what OAuth2PasswordRequestForm does). Never let
+      a credential be a query parameter.
+    attack: >-
+      the password is in the URL, so it is written to the browser's history, sent in the
+      Referer header of any outbound link from the next page, and recorded in plain text in
+      the access log of every proxy between the client and the app. An attacker who reads
+      any one of those -- a shared machine, a log aggregator, a support bundle -- has the
+      credential. No exploitation of the running app is required.
+    overreach: >-
+      an identifier is not a secret. `username` and `email` are on the credential list
+      because they should not be published either, but a rule that treated a public
+      profile lookup `GET /users?email=` as equivalent to a leaked password would be wrong
+      and would get the whole lane muted. Weight the password case; read the identifier
+      case as a prompt.
+
+  py/undeclared-api-introspection:
+    sev: MEDIUM
+    remedy: >-
+      either declare these routes public in the project profile -- making it a decision
+      someone signed -- or pass docs_url=None and openapi_url=None outside development
+    attack: >-
+      /openapi.json returns the complete API map: every path, method, parameter and schema,
+      including endpoints the UI never links. It grants nothing on its own and shortens
+      every subsequent attack.
+    overreach: >-
+      public docs are frequently deliberate, and a team that loses them in development will
+      disable the rule rather than the docs. The rule is satisfied EITHER by turning the
+      generator off OR by declaring the paths public -- both are decisions on the record,
+      which is all this rule actually wants.
+
+controls:
+  positive:
+    - file: controls/positive/query_creds
+      must_flag: [py/credential-in-query]
+  negative:
+    - file: controls/negative/body_creds
+      must_not_flag: [py/credential-in-query]
+      covers: [a Pydantic model parameter is a request body,
+               Form(...) is a form body and not the query string,
+               a path parameter is in the URL by design and is not a credential binding,
+               ordinary non-credential query parameters are not findings]
+
+limits: LIMITS.md

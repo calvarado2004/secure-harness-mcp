@@ -1,0 +1,55 @@
+id: nginx/security
+version: 1
+tier: commodity
+runtime: nginx
+axis: security
+description: What the reverse proxy publishes, and to whom.
+
+lanes:
+  edge: {engine: internal_config, detector: repo_nginx.scan_nginx, input: file}
+
+rules:
+  nginx/exposes-api-introspection:
+    sev: MEDIUM
+    remedy: >-
+      gate it (auth_basic / auth_request / `internal`), restrict it to a trusted network, or
+      disable the generator in production with docs_url=None and openapi_url=None. If public
+      docs are intended, declare those paths in the project's public routes so it is a
+      decision on the record.
+    attack: >-
+      the attacker fetches /openapi.json and receives a complete map of the API -- every
+      path, method, parameter and schema, including endpoints never linked from the UI. It
+      grants no access by itself and it shortens every subsequent attack, which is why it is
+      MEDIUM and not LOW.
+    overreach: >-
+      public API documentation is a legitimate and often deliberate product feature. The fix
+      is to gate it or to declare it public on the record, NOT to delete it -- a team whose
+      docs vanish from staging will turn this rule off, and the introspection surface that
+      actually mattered was the production one.
+
+  nginx/proxies-backing-service:
+    sev: LOW
+    remedy: >-
+      serve the objects through the application, or keep the direct route read-only and
+      scoped to one prefix and confirm the service's own policy does not permit writes or
+      listing
+    attack: >-
+      the object store's own API is reachable from the internet through the edge. Whether
+      that yields anything depends on the bucket policy, which this lane cannot read -- so
+      the honest weight is LOW and the finding is a prompt to check, not a verdict.
+    overreach: >-
+      proxying user-uploaded media through the edge is a completely normal pattern and is
+      often the right one for performance. Treating it as a defect in itself would flag most
+      real deployments; what matters is whether the route is scoped and read-only.
+
+controls:
+  positive:
+    - file: controls/positive/exposed.conf
+      must_flag: [nginx/exposes-api-introspection, nginx/proxies-backing-service]
+  negative:
+    - file: controls/negative/gated.conf
+      must_not_flag: [nginx/exposes-api-introspection, nginx/proxies-backing-service]
+      covers: [an auth_basic-gated /docs is the fix and not the defect,
+               a location that serves files rather than proxying is not a service exposure]
+
+limits: LIMITS.md

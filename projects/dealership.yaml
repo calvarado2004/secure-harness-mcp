@@ -13,7 +13,7 @@ description: Car dealership management system — the brownfield subject of stud
 
 runtimes: auto          # inventory the tree and load the packs for what is actually there
 axes: [security, authorization, practice]
-frameworks: [fastapi]
+frameworks: [fastapi]      # loads BOTH python/authorization/fastapi and python/security/fastapi
 # org: acme            # uncomment to layer a company's internal standards on top
 
 # ---------------------------------------------------------------------------
