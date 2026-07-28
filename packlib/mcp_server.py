@@ -18,8 +18,18 @@ and this project has already paid for one of those.
 """
 import glob
 import os
+import sys
 
-from .loader import PROJECTS
+if __package__ in (None, ""):
+    # Running as a plain script path -- `python /abs/path/to/packlib/mcp_server.py`, which is
+    # how most MCP clients spell a command. Without this the relative import below fails with
+    # "attempted relative import with no known parent package" and the server never starts.
+    # `python -m packlib.mcp_server` works too, but only from the repository root, and a
+    # client config that must also set a working directory is a config that gets set wrong.
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from packlib.loader import PROJECTS
+else:
+    from .loader import PROJECTS
 
 
 def profile_or_fail(explicit):
@@ -42,6 +52,35 @@ def profile_or_fail(explicit):
         f"wrong, and looks identical to being right.")
 
 
+def make_server(name):
+    """A FastMCP-shaped server across both major versions of the `mcp` package.
+
+    THIS EXISTS BECAUSE A FRESH INSTALL WAS BROKEN AND NOTHING SAID SO. `requirements.txt`
+    asked for `mcp>=1.2`; that resolved to 1.27 when the code was written and resolves to
+    2.0 today, which moved `mcp.server.fastmcp` to `mcp.server.mcpserver.MCPServer`. Every
+    developer machine here already had 1.27 installed, so the server started fine for us and
+    died on `ModuleNotFoundError` for anyone installing from the requirements file.
+
+    Both classes expose a compatible `.tool()` decorator and `.run()`, so the fix is a shim
+    rather than a version pin -- pinning would work today and quietly rot in the other
+    direction. The failure is loud if BOTH imports fail, because a server that cannot start
+    should say why, not disappear.
+    """
+    try:                                            # mcp 1.x
+        from mcp.server.fastmcp import FastMCP
+        return FastMCP(name)
+    except ImportError:
+        pass
+    try:                                            # mcp 2.x
+        from mcp.server.mcpserver import MCPServer
+        return MCPServer(name)
+    except ImportError as e:
+        raise ImportError(
+            "neither mcp.server.fastmcp (mcp 1.x) nor mcp.server.mcpserver (mcp 2.x) could "
+            f"be imported: {e}. Install the dependencies with "
+            "`pip install -r requirements.txt`.") from e
+
+
 def register(mcp):
     """Add the pack tools to a FastMCP server. Returns the server, for chaining."""
 
@@ -57,7 +96,7 @@ def register(mcp):
 
         Call this BEFORE reviewing anything, so you know what the review will not cover.
         """
-        from .inspect_repo import inspect
+        from packlib.inspect_repo import inspect
         return inspect(profile_or_fail(profile), repo)
 
     @mcp.tool()
@@ -79,15 +118,37 @@ def register(mcp):
                       and breaks the deployment gets reverted, taking the protection with
                       it. Read this before proposing the maximal fix.
         """
-        from .inspect_repo import guidance
+        from packlib.inspect_repo import guidance
         return guidance(profile_or_fail(profile), repo, path)
 
     return mcp
 
 
+def selftest():
+    """Prove the server can be BUILT and its tools registered, without speaking stdio.
+
+    Cheap enough to run in a Docker build and in `brew test`, which is the point: the last
+    two things that broke here were a distribution that omitted whole directories and a
+    dependency range that resolved to an incompatible major. Both produced a server that
+    could not start, and both were invisible until someone tried to use it.
+    """
+    mcp = make_server("secure-harness-packs")
+    register(mcp)
+    import asyncio
+    names = sorted(t.name for t in asyncio.run(mcp.list_tools()))
+    want = ["module_guidance", "repo_inventory"]
+    ok = names == want
+    print(f"server builds: {type(mcp).__name__}")
+    print(f"tools registered: {names}")
+    print("[PASS] the pack MCP server starts and registers both tools" if ok
+          else f"[FAIL] expected {want}")
+    return 0 if ok else 1
+
+
 def main():
-    from mcp.server.fastmcp import FastMCP
-    mcp = FastMCP("secure-harness-packs")
+    if "--selftest" in sys.argv:
+        sys.exit(selftest())
+    mcp = make_server("secure-harness-packs")
     register(mcp)
     mcp.run()
 

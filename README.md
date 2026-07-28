@@ -68,10 +68,25 @@ python -m packlib.selftest_packs      # does the pack system itself still hold?
 ```
 
 ```jsonc
-// MCP client config
-{ "command": "python", "args": ["-m", "packlib.mcp_server"],
-  "env": { "HARNESS_PROFILE": "your-project" } }
+// MCP client config — absolute path, so no working directory has to be set
+{
+  "command": "/path/to/venv/bin/python",
+  "args": ["/path/to/secure-harness-mcp/packlib/mcp_server.py"],
+  "env": { "HARNESS_PROFILE": "your-project" }
+}
 ```
+
+Verify the install before wiring it into a client — it exits non-zero if anything is missing:
+
+```bash
+pip install -r requirements.txt
+python packlib/mcp_server.py --selftest     # server builds, both tools register
+python -m packlib.packtest                  # every pack discharges its obligations
+python -m packlib.selftest_packs            # the pack system itself still holds
+```
+
+Works with both `mcp` 1.x and 2.x — they moved the server class between majors, and
+`make_server()` shims it.
 
 ### What makes this different from a linter config
 

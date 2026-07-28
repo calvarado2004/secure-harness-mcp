@@ -1,3 +1,6 @@
+# `mcp>=1.2` spans two incompatible majors on purpose: 1.x exposes
+# mcp.server.fastmcp.FastMCP and 2.x exposes mcp.server.mcpserver.MCPServer.
+# packlib.mcp_server.make_server() shims both, and --selftest proves it.
 mcp>=1.2
 PyYAML>=6.0
 bandit>=1.7
