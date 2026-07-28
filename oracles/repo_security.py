@@ -433,6 +433,10 @@ if __name__ == "__main__":
     # GENERATION IS EXPLICIT ON THE COMMAND LINE, because adding a lane changes the number
     # and a changed number with no marker is how a corpus quietly stops being comparable.
     # `--gen2` pins the lane set the study-2 corpus was scored with; the default is current.
+    # Generations are NAMED, not implied by a default. "the current lane set" is not a
+    # number anyone can cite six months later; `gen2` and `gen3` are.
+    #   gen2 — bandit / frontend / authz / practice   (the lane set the study-2 corpus was scored with)
+    #   gen3 — gen2 + fastapi parameter binding + the nginx edge lane
     gen2 = "--gen2" in sys.argv
     routes = None
     for a in sys.argv[2:]:
@@ -452,7 +456,7 @@ if __name__ == "__main__":
 
     a = assess_repo(target, use_codeql="--codeql" in sys.argv,
                     use_fastapi=not gen2, use_nginx=not gen2, public_routes=routes)
-    gen = "gen2 (study-2 corpus lane set)" if gen2 else "current"
+    gen = "gen2 (study-2 corpus lane set)" if gen2 else "gen3 (+fastapi, +nginx)"
     print(f"generation: {gen}   public_routes: "
           f"{'declared' if routes else 'UNAVAILABLE (introspection rule skipped)'}")
     print(f"lanes: {a['lanes']}  analyzable: {a['analyzable']}  weighted: {a['weighted']}  "
