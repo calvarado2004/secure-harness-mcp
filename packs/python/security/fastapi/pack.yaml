@@ -50,9 +50,16 @@ rules:
 
   py/undeclared-api-introspection:
     sev: MEDIUM
+    # WAS: "either declare these routes public in the project profile, or pass
+    # docs_url=None". The first option is not available to a repair agent -- the profile is
+    # the harness's, not the repository's -- so half the remedy was fiction, and all three
+    # arms left this finding untouched. A remedy the actor cannot perform is not a remedy.
     remedy: >-
-      either declare these routes public in the project profile -- making it a decision
-      someone signed -- or pass docs_url=None and openapi_url=None outside development
+      pass docs_url=None, redoc_url=None and openapi_url=None to FastAPI() outside
+      development, e.g. gate them on a DEBUG/ENV setting so they stay available locally and
+      are absent in production. (The project owner may instead declare these paths public in
+      the profile, which settles it the other way -- but that is an owner decision and not a
+      code change, so do not wait for it.)
     attack: >-
       /openapi.json returns the complete API map: every path, method, parameter and schema,
       including endpoints the UI never links. It grants nothing on its own and shortens

@@ -42,6 +42,10 @@ patterns:
 rules:
   js/html-from-interpolation:
     sev: HIGH
+    # The rule the weakest arm burned 11 of its 30 stalls on while closing none of them,
+    # against a one-sentence remedy. The two arms that closed all 11 rewrote the renderers;
+    # this is what that rewrite looks like, so the third does not have to invent it.
+    reference: references/safe-rendering.md
     remedy: build the node with textContent / createElement, or escape each interpolated
       value; do not blocklist payloads
     attack: an attacker stores `<img src=x onerror=...>` in any field the renderer prints;

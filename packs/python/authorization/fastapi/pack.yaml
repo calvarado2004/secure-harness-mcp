@@ -45,6 +45,7 @@ framework:
 
 rules:
   authz/unauthenticated-data-access:
+    reference: references/authorizing-handlers.md
     sev: HIGH
     remedy: >-
       add the project's identity dependency to this handler (e.g. `user: User =
@@ -54,6 +55,7 @@ rules:
       an anonymous caller requests the endpoint and receives records the application intended
       to show only to authenticated users
   authz/authenticated-but-unauthorized:
+    reference: references/authorizing-handlers.md
     sev: MEDIUM
     remedy: >-
       authorize on the caller's role or on ownership of the object being modified, and return
@@ -62,6 +64,7 @@ rules:
       any registered user -- including one who self-registered seconds ago -- modifies or
       deletes another user's records
   authz/client-settable-privilege:
+    reference: references/authorizing-handlers.md
     sev: HIGH   # MEDIUM when the field is not in the general `hard_priv` vocabulary
     remedy: >-
       remove the field from the inbound schema and set it server-side; privilege must never be
