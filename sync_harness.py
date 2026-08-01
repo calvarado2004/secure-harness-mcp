@@ -39,6 +39,7 @@ LANES = {
     "oracles/express_authz.py": "oracles/express_authz.py",
     "oracles/chess_probe.py": "oracles/chess_probe.py",
     "oracles/chess_fidelity.py": "oracles/chess_fidelity.py",
+    "oracles/chess_security.py": "oracles/chess_security.py",
 }
 for _m in ("repo_authz", "repo_compose", "repo_fastapi", "repo_nginx", "repo_practice",
            "repo_security", "repo_seed", "repo_storage"):
