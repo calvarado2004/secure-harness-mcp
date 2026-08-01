@@ -73,7 +73,14 @@ def _would_be_committed(root, rel):
             # file never changed. Only a rule declared INSIDE the tree being scanned counts.
             src = (r.stdout or "").split(":", 1)[0].strip()
             if src and not os.path.isabs(src):
-                src = os.path.join(root, src)
+                # check-ignore reports the source relative to the REPOSITORY TOPLEVEL, not
+                # to the directory being scanned. Joining it onto the scan root instead
+                # turned `/opt/homebrew/.gitignore` into `<control dir>/.gitignore` and made
+                # an outside rule look like the project's own declaration.
+                top = subprocess.run(["git", "-C", root, "rev-parse", "--show-toplevel"],
+                                     capture_output=True, text=True, timeout=20)
+                base = top.stdout.strip() if top.returncode == 0 else root
+                src = os.path.join(base, src)
             if src and os.path.commonpath([os.path.abspath(src), root]) == root:
                 return False              # this project declared it uncommittable
             return True                   # someone else's ignore rule; not a declaration
