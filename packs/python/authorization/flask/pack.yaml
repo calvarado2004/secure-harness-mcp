@@ -1,0 +1,85 @@
+id: python/authorization/flask
+version: 1
+tier: framework
+runtime: python
+axis: authorization
+description: Authorization lane for Flask — the same four questions, a different framework.
+
+# WHY THIS PACK EXISTS
+# The authorization rules were written against FastAPI, where "is this route authenticated"
+# is a question about the handler's dependency list. A single-file Flask service expresses
+# the same thing as a decorator, as a read of `session`/`g`, or as a helper called on the
+# first line of the body -- and to the FastAPI lane all three look like no authentication at
+# all. One shipped service in study 1 surrenders another user's private note through
+# /export while scoring zero on both static batteries, and the reason no lane named it is
+# that no lane could read the framework it was written in.
+#
+# WHY IT BINDS RATHER THAN DECLARES
+# `authz/unauthenticated-data-access` means the same thing in both frameworks, so it keeps
+# one id and one weight. A repository that mixes Flask and FastAPI scores one defect per
+# defect, not one per framework. Only the DETECTOR is framework-specific; the invariant is
+# not. This pack therefore declares nothing and binds four ids owned elsewhere.
+#
+# WHAT IT SHIPS NO REFERENCE FOR
+# Deliberately, prose remedies only. The reference implementations this project ships
+# elsewhere measurably change how far a weak model gets, so a lane introduced to test a
+# claim about oracle coverage must not also change the feedback's form. This pack is the
+# control condition by construction.
+
+requires_facts:
+  - auth_decorators   # decorators that establish identity in this application
+  - public_routes     # endpoints anonymous ON PURPOSE
+  - sensitive_routes  # endpoints the specification ties to an authenticated caller
+  - sensitive_models  # resources that are not public in this application
+
+lanes:
+  flask_authz: {engine: internal_ast, detector: flask_authz.scan_flask_authz, input: tree}
+
+# How Flask expresses things. The reusable half.
+framework:
+  route_decorator: route            # @app.route("/p", methods=[...]) and @app.get/@app.post
+  route_decorator_methods: [get, post, put, delete, patch, route]
+  write_methods: [POST, PUT, DELETE, PATCH]
+  identity_sources: [session, g]    # framework globals that carry the caller
+  # A guard is a guard whether applied as `@require_admin` or called as `require_admin()`.
+  # Matched by token after stripping leading underscores, because the same helper is
+  # `get_current_user` in one project and `_get_current_user` in the next.
+  guard_name_tokens: [auth, login, role, permission, admin, jwt]
+  # A decorator may hand the handler its caller: `@token_required def create(user)`. Any
+  # parameter not bound from the URL is decorator-injected, and using it IS authorization.
+  injected_principal: true
+
+binds:
+  - authz/unauthenticated-data-access
+  - authz/authenticated-but-unauthorized
+  - authz/client-settable-privilege
+  - authz/decision-without-denial
+
+# THREE STATES OF PROJECT INTENT, NOT TWO.
+# A route the project declared public is silent. A route it declared sensitive is a gated
+# finding when unguarded. A route it declared NOTHING about is an ADVISORY: reported, never
+# counted toward the gated load. Resolving "undeclared" silently to public gives the lane a
+# blind spot; resolving it to sensitive reports conformant code as broken and hands the
+# repair loop a budget to break working endpoints. Naming the third state is the same
+# discipline as distinguishing "I could not measure this" from "I found nothing".
+undeclared_route_verdict: advisory
+
+limits: LIMITS.md
+
+controls:
+  positive:
+    - file: controls/positive/unguarded
+      must_flag: [authz/unauthenticated-data-access, authz/decision-without-denial]
+  negative:
+    - file: controls/negative/guarded
+      must_not_flag: [authz/unauthenticated-data-access,
+                      authz/authenticated-but-unauthorized,
+                      authz/decision-without-denial]
+      covers:
+        - "a decorator FACTORY is a guard: @require_role('admin')"
+        - "a guard CALLED in the body is a guard: require_admin()"
+        - "a private helper is a guard: _get_current_user()"
+        - "a decorator-injected principal used in the body IS ownership authorization"
+        - "scoping a query by the caller is authorization, not a missing check"
+        - "a declared-public route is not an omission"
+        - "an ownership branch that returns 403 on the failing path is the fix"

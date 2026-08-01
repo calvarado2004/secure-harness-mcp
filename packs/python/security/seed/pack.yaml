@@ -25,5 +25,8 @@ controls:
       covers:
         - "a bootstrap admin whose password comes from the environment is the FIX"
         - "an unprivileged demo account with a literal password is a different concern"
+        - "a raw-SQL admin row with a NULL password is the FIX, not the defect"
+        - "an INSERT into a table that has no credential column is not this rule's business"
+        - "a function matching the bootstrap name pattern that seeds no account is silent"
 
 limits: LIMITS.md

@@ -37,3 +37,30 @@ rules:
       part that is not necessary: the credential being a LITERAL. An account seeded with a
       NULL or environment-supplied password is treated as the fix and stays silent, and an
       unprivileged demo account with a literal password is not this rule's business at all.
+
+  # THE SECOND RULE THAT NEEDED THE BIND MECHANISM.
+  # "A handler computes an authorization answer and then does nothing with it" is the same
+  # defect in FastAPI, Flask, Express and Spring, and the attack is word-for-word identical.
+  # Reading it is framework-specific; being it is not. Declared once here, bound by each
+  # framework pack that can detect it, so one defect keeps one id and one weight.
+  authz/decision-without-denial:
+    sev: HIGH
+    remedy: >-
+      make the comparison decide the response. Deny explicitly on the failing path -- return
+      403, or 404 where the endpoint should not confirm that the object exists -- rather than
+      letting control fall through to the success path.
+    attack: >-
+      the attacker requests another user's object by identifier while authenticated as
+      themselves. The handler compares them against the owner, the comparison fails, and
+      because the failing branch neither returns nor raises, the handler carries on and
+      serves the object anyway. Every review that asks "does this endpoint check ownership?"
+      answers yes, and the check has no effect on what comes back.
+    overreach: >-
+      NOT EVERY CONDITIONAL THAT MENTIONS A USER IS A BROKEN AUTHORIZATION CHECK. A branch
+      that records a decision into a variable, sets a flag, or narrows a query is doing work,
+      and reporting it would tell a developer to add a denial to code that already handles
+      the case elsewhere. The rule therefore fires only when the matching branch is INERT --
+      `pass`, `...`, or nothing but a docstring -- and no `else` exists. A conditional whose
+      outcome is used later is out of scope by construction, which also means a decision
+      that is stored and then mishandled further down is missed. That is the price of not
+      guessing.

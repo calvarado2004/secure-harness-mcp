@@ -79,46 +79,167 @@ def _literal_password(node):
     return None
 
 
+def _bootstrap_scopes(tree, rel):
+    """The parts of one file that are a bootstrap path.
+
+    A repository puts its bootstrap in a file called `seed_data.py`. A single-file
+    application has no such file: its bootstrap is `def init_db()` three hundred lines into
+    `app.py`, and that is the shape most generated code takes. Reading only the filename
+    means the same defect is a finding in one project's layout and invisible in another's,
+    which makes the lane a statement about file naming rather than about privilege.
+    """
+    if SEED_NAMES.search(os.path.basename(rel)):
+        return [tree]                     # the whole file is the bootstrap path
+    return [n for n in ast.walk(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and SEED_NAMES.search(n.name)]
+
+
+def _literal_password_bindings(scope):
+    """`name -> literal` for local variables in this scope that hold a literal credential.
+
+    Raw-SQL seeding almost never inlines the password in the statement; it hashes it into a
+    local one line earlier and binds the local as a parameter. Following that one hop is
+    what separates reading this defect from reading only the tidy ORM spelling of it.
+    """
+    out = {}
+    for node in ast.walk(scope):
+        if not (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)):
+            continue
+        name = node.targets[0].id
+        lit = _literal_password(node.value)
+        if lit is None:
+            continue
+        # A bare string only counts when the variable is named like a credential; a hashing
+        # call counts whatever it was assigned to, because nothing else hashes a constant.
+        if isinstance(node.value, ast.Call) or \
+                any(p in name.lower() for p in PASSWORD_FIELDS):
+            out[name] = lit
+    return out
+
+
+# A parameterised INSERT is the raw-SQL spelling of "create this account". The column list
+# is what makes it readable: without it there is no way to tell the username from the
+# password, and a lane that guesses reports the fix ("operator", NULL, "admin") as the
+# defect. With it, each value is interpreted as the column it is actually going into.
+_COLS_RE = re.compile(r"\bINSERT\s+INTO\s+[^\s(]+\s*\(([^)]*)\)", re.I)
+_VALUES_RE = re.compile(r"\bVALUES\s*\(([^)]*)\)", re.I)
+_STRLIT_RE = re.compile(r"'([^']*)'|\"([^\"]*)\"|(NULL)|(\S+)", re.I)
+
+
+def _columns(sql):
+    m = _COLS_RE.search(sql)
+    if not m:
+        return None
+    cols = [c.strip().strip('`"\'[]').lower() for c in m.group(1).split(",")]
+    return cols or None
+
+
+def _sql_seeded_admin(call, binds):
+    """A privileged account created by an INSERT. Returns the literal credential, or None.
+
+    The shape is one statement whose PRIVILEGE column holds a privileged literal and whose
+    PASSWORD column holds a literal credential. Both, in one statement. Either alone is
+    ordinary: an unprivileged demo row with a literal password grants nothing, and an
+    administrator row with a NULL password is exactly the fix this rule asks for.
+    """
+    if (getattr(call.func, "attr", None) or getattr(call.func, "id", None)) != "execute":
+        return None
+    if not call.args:
+        return None
+    sql = call.args[0]
+    if not (isinstance(sql, ast.Constant) and isinstance(sql.value, str)):
+        return None
+    cols = _columns(sql.value)
+    if not cols:
+        return None                      # an INSERT we cannot read is not one we report
+
+    # the bound values, in statement order
+    vals = []
+    for a in call.args[1:]:
+        vals.extend(a.elts if isinstance(a, (ast.Tuple, ast.List)) else [a])
+    if len(vals) != len(cols):
+        # all-literal spelling: the values are inside the statement
+        m = _VALUES_RE.search(sql.value)
+        if not m:
+            return None
+        lits = []
+        for g in _STRLIT_RE.finditer(m.group(1).strip()):
+            lits.append(g.group(1) if g.group(1) is not None else g.group(2))
+        if len(lits) != len(cols):
+            return None
+        vals = lits                      # plain strings, or None for NULL/unquoted
+
+    priv, pw = False, None
+    for col, v in zip(cols, vals):
+        lit = v if isinstance(v, (str, type(None))) else (
+            binds.get(v.id) if isinstance(v, ast.Name) else _literal_password(v))
+        if col in PRIV_FIELDS and lit is not None and lit.lower() in PRIV_VALUES:
+            priv = True
+        elif col in PASSWORD_FIELDS and lit:
+            pw = lit
+    return pw if (priv and pw) else None
+
+
+def _finding(rel, line, lit):
+    return {
+        "tool": "seed", "rule": "seed/default-admin-credential",
+        "file": rel, "line": line, "sev": "HIGH",
+        "message": (f"the bootstrap path creates a privileged account with a "
+                    f"literal password ({'*' * len(lit)}, {len(lit)} chars)"),
+        "remedy": ("read the bootstrap password from the environment and refuse "
+                   "to seed without it, or create the account disabled and force "
+                   "a password set on first use. Seeding the first administrator "
+                   "is legitimate; shipping its password is not."),
+    }
+
+
 def scan_python(root):
     """Bootstrap findings in Python. Returns (findings, unparsed_or_None)."""
     root = os.path.abspath(root)
     findings = []
+    seen = set()
     for path in _files(root, (".py",)):
         rel = os.path.relpath(path, root)
-        if not SEED_NAMES.search(os.path.basename(rel)):
-            continue                      # not a bootstrap path
         try:
             tree = ast.parse(open(path, encoding="utf8", errors="replace").read())
         except SyntaxError:
             return None, rel
 
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            kw = {k.arg: k.value for k in node.keywords if k.arg}
-            privileged = False
-            for f in PRIV_FIELDS & set(kw):
-                v = kw[f]
-                if isinstance(v, ast.Constant):
-                    if v.value is True or (isinstance(v.value, str)
-                                           and v.value.lower() in PRIV_VALUES):
-                        privileged = True
-            if not privileged:
-                continue
-            for f in PASSWORD_FIELDS & set(kw):
-                lit = _literal_password(kw[f])
-                if lit is None:
+        for scope in _bootstrap_scopes(tree, rel):
+            binds = _literal_password_bindings(scope)
+            for node in ast.walk(scope):
+                if not isinstance(node, ast.Call):
                     continue
-                findings.append({
-                    "tool": "seed", "rule": "seed/default-admin-credential",
-                    "file": rel, "line": node.lineno, "sev": "HIGH",
-                    "message": (f"the bootstrap path creates a privileged account with a "
-                                f"literal password ({'*' * len(lit)}, {len(lit)} chars)"),
-                    "remedy": ("read the bootstrap password from the environment and refuse "
-                               "to seed without it, or create the account disabled and force "
-                               "a password set on first use. Seeding the first administrator "
-                               "is legitimate; shipping its password is not."),
-                })
+                key = (rel, node.lineno)
+                if key in seen:
+                    continue
+
+                # --- the ORM spelling: a constructor naming both role and password ---
+                kw = {k.arg: k.value for k in node.keywords if k.arg}
+                privileged = False
+                for f in PRIV_FIELDS & set(kw):
+                    v = kw[f]
+                    if isinstance(v, ast.Constant):
+                        if v.value is True or (isinstance(v.value, str)
+                                               and v.value.lower() in PRIV_VALUES):
+                            privileged = True
+                if privileged:
+                    for f in PASSWORD_FIELDS & set(kw):
+                        lit = _literal_password(kw[f])
+                        if lit is not None:
+                            seen.add(key)
+                            findings.append(_finding(rel, node.lineno, lit))
+                            break
+                if key in seen:
+                    continue
+
+                # --- the raw-SQL spelling: an INSERT carrying both ---
+                lit = _sql_seeded_admin(node, binds)
+                if lit is not None:
+                    seen.add(key)
+                    findings.append(_finding(rel, node.lineno, lit))
     findings.sort(key=lambda f: (f["file"], f["line"]))
     return findings, None
 
