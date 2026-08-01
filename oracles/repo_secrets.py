@@ -60,13 +60,24 @@ def _would_be_committed(root, rel):
     which is exactly the moment worth warning about, whether or not it has happened yet.
     """
     try:                                  # git handles nesting, negation and global excludes
-        r = subprocess.run(["git", "-C", root, "check-ignore", "-q", rel],
+        r = subprocess.run(["git", "-C", root, "check-ignore", "-v", rel],
                            capture_output=True, text=True, timeout=20)
-        if r.returncode == 0:
-            return False                  # declared uncommittable
         if r.returncode == 1:
             return True                   # git answered: nothing is stopping it
-    except (OSError, subprocess.SubprocessError):
+        if r.returncode == 0:
+            # WHOSE declaration is this? A scanned tree often sits inside some OTHER
+            # repository: an installed copy under a package prefix, a checkout vendored into
+            # a monorepo, a fixture inside the harness's own tree. That outer repository's
+            # ignore rules are not this project's intent, and reading them as such made the
+            # lane pass its own control in one location and fail it in another while the
+            # file never changed. Only a rule declared INSIDE the tree being scanned counts.
+            src = (r.stdout or "").split(":", 1)[0].strip()
+            if src and not os.path.isabs(src):
+                src = os.path.join(root, src)
+            if src and os.path.commonpath([os.path.abspath(src), root]) == root:
+                return False              # this project declared it uncommittable
+            return True                   # someone else's ignore rule; not a declaration
+    except (OSError, subprocess.SubprocessError, ValueError):
         pass
     # No git here. Fall back to reading the declarations by hand.
     name = os.path.basename(rel)
