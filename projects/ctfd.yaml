@@ -1,0 +1,62 @@
+id: projects/ctfd
+version: 1
+tier: project
+description: >-
+  CTFd, a competition platform in Flask with a flask-restx REST API. Apache-2.0, roughly
+  18,700 lines of backend Python across 21 API namespaces. Unlike every other subject in this
+  project, NOBODY HERE WROTE IT: it is third-party software with its own maintainers, its own
+  users and its own CVE history, pinned at a tag that predates a published fix.
+
+# WHY THIS SUBJECT, AND WHY THIS PROFILE IS SO CAREFUL
+# The other three subjects are ours, which is the standing objection to every number this
+# project reports: we wrote the code, we wrote the oracles, and the oracles know the defects.
+# This subject answers both halves. The code is not ours, and the vulnerability was found,
+# named and patched by people who have never seen this harness. The ground truth is a
+# published advisory and a one-line upstream fix, not our own judgement.
+#
+# That only holds if the profile states a POLICY and never a SITE. Everything below is a fact
+# about what CTFd treats as private, readable from how the project guards its own handlers.
+# Nothing below names the vulnerable endpoint, the vulnerable file, or the guard that is
+# missing from it. If it did, the finding would prove nothing: a rule pointed at the answer
+# is not a rule. The lane infers which decorator enforces the policy, how widely the project
+# has established it, and which handler deviates.
+
+runtimes: auto
+axes: [security, authorization]
+frameworks: [flask, flask-restx]   # plain blueprints AND the class-mounted REST API
+
+facts:
+  # ---- flask lane: what is anonymous on purpose ---------------------------
+  # Read from CTFd's own routes: a login cannot require a login, and the theme statics and
+  # robots.txt are served to anybody by design.
+  public_routes: [/, /login, /register, /reset_password, /confirm, /robots.txt,
+                  /themes/<theme>/static/<path:path>, /files/<path:path>, /healthcheck]
+  sensitive_routes: [/admin, /settings, /api/v1/users/me, /api/v1/teams/me]
+  auth_decorators: [authed_only, admins_only, require_verified_emails, ratelimit]
+  sensitive_models: [Users, Teams, Solves, Awards, Submissions, Tokens]
+
+  # ---- flask-restx lane: the policy, and nothing else ---------------------
+  # CTFd ships an "Account Visibility" setting whose entire purpose is to control whether one
+  # competitor can see who another competitor is. That makes account IDENTITY the protected
+  # class, and a handler discloses it by returning a name, username or email belonging to an
+  # account. This is the product's own documented policy, stated here as a policy.
+  protected_data:
+    - noun: account
+      identity_attrs: [name, username, email]
+  # An administrator already sees every competitor, so a handler restricted to administrators
+  # does not additionally need the visibility check: the stronger guard subsumes the weaker.
+  dominating_guards: [admins_only]
+
+  # ---- container lane ----------------------------------------------------
+  # Read from CTFd's own docker-compose.yml: `ctfd` maps 8000:8000 and `nginx` maps 80:80.
+  # `db` and `cache` declare no ports and are reachable only on the compose network.
+  published_services: [ctfd, nginx]
+
+deployment:
+  orchestrator: compose
+
+# WHAT THIS PROFILE DELIBERATELY DOES NOT CLAIM
+# CTFd's frontend themes are Jinja templates with inline JavaScript that the browser lane was
+# not written for, the plugin system loads code this profile cannot enumerate, and the
+# migrations directory is skipped. Those are UNREAD, and a clean score from this profile is a
+# statement about the API surface and about nothing else.

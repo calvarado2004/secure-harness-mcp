@@ -62,5 +62,21 @@ rules:
       mention of `role` as an escalation would flag the very endpoint an administrator uses to
       grant one. It fires on INBOUND schemas, and a project with an admin-only grant path
       declares it rather than deleting the feature.
+  authz/guard-inconsistent-with-peers:
+    sev: HIGH
+    remedy: >-
+      apply the guard this project already uses for this data class, as the sibling handlers
+      that return the same data do; if the endpoint is meant to disclose it to callers that
+      guard would refuse, declare that rather than leaving it to omission
+    attack: >-
+      the attacker requests the one endpoint that returns a protected record without the check
+      its siblings carry, and reads data the project's own policy withholds everywhere else
+    overreach: >-
+      A DIFFERENT GUARD IS NOT A MISSING ONE. A handler restricted to administrators does not
+      also need a visibility check, a write is not a disclosure, and a decorator used once is
+      a coincidence rather than a convention. A rule that ignored those would report an entire
+      admin surface as broken and teach the reader to skim the axis. It fires only where the
+      project has ESTABLISHED a guard across several handlers, only on reads, and only where
+      no stronger guard already applies.
 
 limits: LIMITS.md

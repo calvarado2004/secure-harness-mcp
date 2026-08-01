@@ -115,6 +115,10 @@ class Pack:
         self.patterns = d.get("patterns", {}) or {}
         self.framework = d.get("framework", {}) or {}
         self.controls = d.get("controls", {}) or {}
+        # A lane driven by project facts cannot be exercised without them, and a control that
+        # cannot run is not a passing one. These are the POLICY a control assumes, never a
+        # site: they must not name a file, a route or a handler.
+        self.control_facts = d.get("control_facts", {}) or {}
         self.deployment = d.get("deployment", {}) or {}
         self.context_reweight = list(d.get("context_reweight", []) or [])
         self.spec = d.get("spec", {}) or {}
@@ -215,7 +219,16 @@ class ResolvedPolicy:
                 f"fact '{name}' is required by a pack but no layer supplies it. "
                 f"Add it to projects/{self.profile}.yaml under `facts:`.")
         v = self._facts[name]
-        return frozenset(v) if isinstance(v, (list, set, tuple)) else v
+        # A fact is usually a flat list of names, and a frozenset is the convenient shape for
+        # membership tests. A fact can also be STRUCTURED: a policy like `protected_data` is a
+        # list of mappings, and freezing it raised `unhashable type: dict` at the first lane
+        # that asked for one. Freeze only what can be frozen, and hand structured facts back
+        # as they were written.
+        if isinstance(v, (list, set, tuple)):
+            if all(isinstance(x, (str, int, float, bool, type(None))) for x in v):
+                return frozenset(v)
+            return list(v)
+        return v
 
     def has_fact(self, name):
         return name in self._facts

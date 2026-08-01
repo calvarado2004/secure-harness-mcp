@@ -119,8 +119,15 @@ def _run_lane_on(pack, control_file):
         path = os.path.join(pack.dir, control_file)
         if lane.get("input") == "tree" and not os.path.isdir(path):
             return None
+        # A fact-driven lane takes the project's policy as a second argument. Without it the
+        # lane correctly reports nothing, and its control would fail for the wrong reason:
+        # not because the detector is broken but because it was asked a question with no
+        # policy attached. Packs that need facts declare `control_facts`.
         try:
-            out = det(path)
+            import inspect
+            takes_facts = (bool(pack.control_facts)
+                           and len(inspect.signature(det).parameters) > 1)
+            out = det(path, pack.control_facts) if takes_facts else det(path)
         except Exception:
             return None
         if isinstance(out, tuple):

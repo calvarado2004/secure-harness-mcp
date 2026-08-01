@@ -1,0 +1,91 @@
+id: python/authorization/flask-restx
+version: 1
+tier: framework
+runtime: python
+axis: authorization
+description: Authorization lane for flask-restx — the fourth framework to need the same rules.
+
+# WHY THIS PACK EXISTS
+# The Flask lane walks decorated FUNCTIONS. flask-restx puts the path on a CLASS and the verb
+# in the METHOD NAME, so to that lane a flask-restx module contains no routes: it is opened,
+# parsed, and reported clean. On the subject this pack was written for that is 125 handlers
+# across 21 namespaces — an entire REST API — invisible to the axis meant to read it, while
+# `bandit` reads the same files and reports nothing because a missing authorization decorator
+# is not a pattern it can express. A file that one lane read and another could not parse is
+# indistinguishable, in the inventory, from a file that was checked. That is the same error
+# the `m` coordinate exists to prevent, one level up.
+#
+# WHY IT BINDS RATHER THAN DECLARES
+# Same reason as the Flask and Express packs. `authz/unauthenticated-data-access` means one
+# thing and carries one weight whether the missing guard is a dependency, a decorator, a
+# middleware or a Resource method decorator. Only the reading is framework-specific.
+#
+# THE ONE RULE IT ADDS, AND WHY IT IS NOT "NO AUTHORIZATION"
+# `authz/guard-inconsistent-with-peers` is declared in general/authorization because the
+# defect is framework-independent, and bound here because reading it is not. The handler that
+# forced it reads the caller's identity, carries two visibility guards, and is a published
+# CVE. What it omits is the THIRD guard, the one its own project applies to every other
+# handler returning the same class of data. Every rule that asks "does this handler check
+# anything?" answers yes, which is why the defect survived both commodity engines.
+#
+# WHAT THE PROJECT SUPPLIES, AND WHAT THE LANE INFERS
+# Supplied: which data class is not public and which attributes disclose it. That is a
+# POLICY and it names no endpoint.
+# Inferred: which decorator enforces the policy, how widely the project has established it,
+# and WHICH HANDLER DEVIATES.
+# A rule told which endpoint is broken proves nothing. A rule told what the policy is, and
+# left to find the site, is one that transfers to the next project.
+
+requires_facts:
+  - protected_data      # [{noun, identity_attrs, guard?}] — the policy, never a site
+  - dominating_guards   # guards that subsume a visibility check, e.g. admins_only
+
+lanes:
+  flask_restx_authz:
+    engine: internal_ast
+    detector: flask_restx_authz.scan_flask_restx_authz
+    input: tree
+
+framework:
+  route_decorator: route          # @<namespace>.route("/x") on a Resource subclass
+  route_methods: [get, post, put, delete, patch]
+  read_methods: [GET]             # a visibility guard controls disclosure, so reads only
+  mount_call: add_namespace       # Api.add_namespace(ns, "/prefix") supplies the path
+  mount_prefix_from: Blueprint    # ...under the Blueprint's url_prefix
+  class_decorators_inherit: true  # flask-restx applies class decorators to every verb
+  min_carriers: 3                 # below this a decorator is a coincidence, not a convention
+
+binds:
+  - authz/unauthenticated-data-access
+  - authz/authenticated-but-unauthorized
+  - authz/client-settable-privilege
+  - authz/guard-inconsistent-with-peers
+
+# The POLICY the controls assume. It names a data class and the attributes that disclose it,
+# and deliberately names no file, route or handler: a control that pointed at the site would
+# be testing the answer rather than the rule.
+control_facts:
+  protected_data:
+    - noun: account
+      identity_attrs: [name, username, email]
+  dominating_guards: [admins_only]
+
+controls:
+  positive:
+    - file: controls/positive
+      must_flag:
+        - authz/guard-inconsistent-with-peers
+  negative:
+    - file: controls/negative
+      must_not_flag:
+        - authz/guard-inconsistent-with-peers
+      covers:
+        - "a class-mounted Resource IS a route: the path is on the class, the verb is the method name"
+        - "a namespace mount resolves to the path a caller reaches, not the decorator fragment"
+        - "class-level decorators guard every verb the Resource serves"
+        - "a WRITE that touches the protected table is not a disclosure"
+        - "an @admins_only handler does not also need the visibility guard it subsumes"
+        - "a decorator carried by fewer than three handlers is a coincidence, not a convention"
+        - "a project that declares no protected data gets no verdict rather than a default one"
+
+limits: LIMITS.md
