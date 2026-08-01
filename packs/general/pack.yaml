@@ -38,4 +38,13 @@ vocabulary:
 
 scan:
   # directories no lane should descend into, in any runtime
-  skip_dirs: [__pycache__, .git, node_modules, .venv, images]
+  #
+  # The second line is BUILD OUTPUT, and it is here rather than in a project profile because
+  # these are vendor-fixed names, not one project's choices. Pointing the harness at a real
+  # iOS and Android product surfaced 7,879 unclaimed files, of which the overwhelming
+  # majority were Xcode DerivedData and CocoaPods copies of frameworks the project neither
+  # wrote nor ships. A blind-spot report that large is not a blind-spot report; it is a
+  # place where a real one goes unnoticed. Excluded files are still COUNTED and reported as
+  # declared exclusions, so this narrows the report without silencing it.
+  skip_dirs: [__pycache__, .git, node_modules, .venv, images,
+              "DerivedData*", Pods, .gradle, .build, Carthage, coverage, .next, .nuxt]

@@ -8,3 +8,10 @@ venv/
 
 .idea/
 __pycache__/
+
+# The secrets lane's controls are .env files ON PURPOSE. The positive control must be a
+# tracked credential file, because "tracked" is half of what the rule tests, and the ignore
+# rule above would otherwise make the control silent and the lane untested. These two paths
+# carry invented values and nothing else.
+!packs/config/security/commodity/controls/positive/committed/.env
+!packs/config/security/commodity/controls/negative/templated/.env

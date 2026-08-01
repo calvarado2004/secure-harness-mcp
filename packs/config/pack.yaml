@@ -1,0 +1,22 @@
+id: config
+version: 1
+tier: commodity
+runtime: config
+description: Configuration files that execute in no runtime and are read by all of them.
+
+# WHY THIS RUNTIME EXISTS
+# Every other runtime here is an execution environment, because that is what decides which
+# engine can open a file. `.env` is not one. It is not Python, not JavaScript, not SQL, not a
+# container manifest; it is read at startup by whatever happens to be running. So it was
+# claimed by nobody and landed in the inventory's unclaimed pile.
+#
+# That pile is reported rather than skipped, and it is the only reason the defect that
+# prompted this pack was ever seen: a real product, scanned with no findings on everything
+# the harness could read, listed a tracked `.env` holding a JWT signing key among the files
+# nothing claimed. Declaring `config` a runtime is how that stops being luck.
+
+detect:
+  filenames: [.env, .envrc, env.sh]
+  patterns: [".env.*"]
+
+unmeasured_verdict: unreadable

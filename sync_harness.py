@@ -35,6 +35,7 @@ TREES = ["packs", "packlib", "projects", "orgs"]
 # repository distributes the instruments, not the study that used them.
 LANES = {
     "oracles/flask_authz.py": "oracles/flask_authz.py",
+    "oracles/repo_secrets.py": "oracles/repo_secrets.py",
 }
 for _m in ("repo_authz", "repo_compose", "repo_fastapi", "repo_nginx", "repo_practice",
            "repo_security", "repo_seed", "repo_storage"):

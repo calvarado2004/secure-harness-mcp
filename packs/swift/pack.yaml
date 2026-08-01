@@ -1,0 +1,24 @@
+id: swift
+version: 1
+tier: commodity
+runtime: swift
+status: detect-only
+description: Swift and Objective-C sources. Declared so they are an admitted blind spot.
+
+# WHY A PACK WITH NO RULES
+# A Capacitor application ships a real iOS target, and the token handling, keychain use and
+# WebView configuration in it are as much part of the product's attack surface as anything on
+# the server. This project has no Swift lane and writing one is not a small job. The choice is
+# therefore between two kinds of silence: files nothing claims, which appear in the inventory
+# as an undifferentiated pile of thousands, or a declared runtime with no lanes, which the
+# report names as UNREAD every single time it runs.
+#
+# The second is the only honest one, and it is the same argument as the `m` coordinate: a
+# harness has to be able to say "I could not read this" in a way that cannot be mistaken for
+# "there was nothing to find".
+
+detect:
+  extensions: [.swift, .m, .mm]
+  filenames: [Package.swift, Podfile]
+
+unmeasured_verdict: no_lane

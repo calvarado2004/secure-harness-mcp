@@ -64,3 +64,31 @@ rules:
       outcome is used later is out of scope by construction, which also means a decision
       that is stored and then mishandled further down is missed. That is the price of not
       guessing.
+
+  # THE RULE THIS PROJECT LEARNED FROM A REPOSITORY IT DID NOT WRITE THE ORACLES FOR.
+  # Pointing the harness at a real product surfaced exactly one serious defect, and no lane
+  # found it: a committed `.env` holding a JWT signing key and a database URL, in a public
+  # repository. It was visible only in the inventory's UNCLAIMED list, because `.env` is a
+  # file type no runtime claims. A blind spot that reports itself is worth a great deal, and
+  # a blind spot that closes is worth more.
+  secrets/committed-credential-file:
+    sev: HIGH
+    remedy: >-
+      rotate every value the file contains, on the assumption that anything ever pushed is
+      disclosed; then untrack it (`git rm --cached`), add it to `.gitignore`, and keep a
+      committed `.env.example` carrying the KEYS and no values. Deleting the file in a new
+      commit does not remove it from history, so a rewrite is needed as well if the
+      repository was ever public.
+    attack: >-
+      the attacker clones the repository, or reads it on the hosting site, and holds the
+      application's token signing key. They can then mint a session for any account without
+      touching the login path, and nothing in the logs distinguishes those requests from
+      legitimate ones. Where the file also carries a database URL, the credential in it is
+      usually reachable from anywhere the database is.
+    overreach: >-
+      A COMMITTED TEMPLATE IS THE FIX, NOT THE DEFECT. `.env.example`, `.env.sample` and
+      `.env.template` exist precisely so the keys can be committed without the values, and a
+      rule that flagged them would be telling a project to delete its own documentation. The
+      rule therefore fires only on a file that is TRACKED, that is not a template by name,
+      and whose values are not placeholders. An untracked `.env` on a developer's disk is
+      not this rule's business at all: that is where secrets are supposed to live.

@@ -1,0 +1,36 @@
+id: config/security/commodity
+version: 1
+tier: commodity
+runtime: config
+axis: security
+description: Credentials that reach the repository.
+
+# Declares nothing. The invariant "a credential file reached version control" is the same in
+# every language, so it is owned by packs/general/security and BOUND here, which is the third
+# rule in this system to need that mechanism and the first to need it for a file type rather
+# than a language.
+
+binds:
+  - secrets/committed-credential-file
+
+lanes:
+  secrets: {engine: internal_text, detector: repo_secrets.scan_secrets, input: tree}
+
+limits: LIMITS.md
+
+controls:
+  positive:
+    - file: controls/positive/committed
+      must_flag: [secrets/committed-credential-file]
+  negative:
+    - file: controls/negative/templated
+      must_not_flag: [secrets/committed-credential-file]
+      covers:
+        - "a committed .env.example carrying keys and no values is the FIX"
+        - "placeholder values are documentation, not credentials"
+        - "a tracked .env whose values are all placeholders is documentation, not a leak"
+        # The fourth suppression, "a .env the project declared uncommittable in .gitignore",
+        # is deliberately NOT claimed here. A control fixture cannot demonstrate it: to sit
+        # in the distribution the file must be tracked, and tracked is the opposite of the
+        # case. It is covered by the lane's own behaviour on any working tree instead, and
+        # claiming it from a fixture that does not test it would be worse than the gap.

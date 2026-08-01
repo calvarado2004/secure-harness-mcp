@@ -121,7 +121,15 @@ def inventory(root, detectors, skip_dirs, skip_globs=(), lanes_for=None,
     inv = Inventory()
     inv.lanes_for = dict(lanes_for or {})
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in skip_dirs]
+        # Matched as PATTERNS, not just names. A real Xcode project carries DerivedData,
+        # DerivedData-device, DerivedData-ipad and five more variants of the same build
+        # output; an exact-name list catches one of the eight and the report then buries a
+        # genuine blind spot under six thousand vendor files. Plain names still match
+        # exactly, because a name with no wildcard is its own pattern.
+        dirnames[:] = [d for d in dirnames
+                       if d not in skip_dirs
+                       and not any(fnmatch.fnmatch(d, s) for s in skip_dirs if
+                                   any(c in s for c in "*?["))]
         for fn in sorted(filenames):
             full = os.path.join(dirpath, fn)
             rel = os.path.relpath(full, root)

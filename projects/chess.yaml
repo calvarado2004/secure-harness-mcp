@@ -1,0 +1,37 @@
+id: projects/chess
+version: 1
+tier: project
+description: >-
+  A multiplayer chess platform built with several coding assistants and hand revision, with
+  an Express/TypeScript backend, a React frontend, and iOS and Android applications wrapped
+  through Capacitor. It was never built with a security harness of any kind.
+
+# WHY THIS PROFILE IS SO SHORT, AND WHY THAT IS THE POINT
+# Every fact below was read out of this repository's own files, not carried over from another
+# subject. The one time a profile in this project was populated by copying another's values,
+# it declared `network: internal` for a stack that published three services to the host, and
+# the lane that trusted it went quiet about a real exposure. A profile that asserts more than
+# it has checked is worse than a short one.
+#
+# What is deliberately ABSENT matters more than what is present. This project's authorization
+# lives in Express middleware and in a WebSocket lobby, and the harness has authorization
+# lanes for FastAPI and Flask only. `node-js` is a detect-only runtime: it claims the files
+# and ships no lanes. So the backend is UNREAD, and the inventory is expected to say so. A
+# clean score from this profile would be a statement about the frontend, the proxy, the
+# container images and the seed script, and about nothing else.
+
+runtimes: auto
+axes: [security]
+frameworks: []
+
+facts:
+  # Read from docker-compose.yml: `backend` maps 3002:3000 and `chess` maps 3001:80.
+  # `postgres` and `redis` declare no ports and are reachable only on the compose network.
+  published_services: [backend, chess]
+
+deployment:
+  orchestrator: compose
+  network: published        # NOT internal: two services are bound to host ports
+  published: [backend, chess]
+  secrets_from: environment
+  verified: false           # nothing has machine-checked this stack yet
