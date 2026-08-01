@@ -21,10 +21,25 @@ description: >-
 # container images and the seed script, and about nothing else.
 
 runtimes: auto
-axes: [security]
-frameworks: []
+axes: [security, authorization]
+frameworks: [express]      # loads node-js/authorization/express
+
+# The facts the express authorization pack requires. Read out of this repository: the two
+# middlewares are in backend/src/middleware/auth.ts, and the route surface is what
+# backend/src/server.ts mounts. `optionalAuth` is listed separately and deliberately: it
+# attaches a caller when a token happens to be present and continues without one, so it is
+# not a guard, and a lane that counted it as one would pass an endpoint that serves private
+# data to anonymous callers.
 
 facts:
+  auth_middleware: [authenticate]
+  optional_auth_middleware: [optionalAuth]
+  # Anonymous on purpose. Registration and login cannot require a login; health is a probe
+  # target; lesson categories and summaries are the product's public teaching content.
+  public_routes: [/health, /api/auth/register, /api/auth/login, /api/auth/refresh,
+                  /api/theory/categories, /api/theory/lessons]
+  # Tied to an authenticated caller by the product's own design.
+  sensitive_routes: [/api/auth/logout, /api/theory/progress, /api/users/me]
   # Read from docker-compose.yml: `backend` maps 3002:3000 and `chess` maps 3001:80.
   # `postgres` and `redis` declare no ports and are reachable only on the compose network.
   published_services: [backend, chess]

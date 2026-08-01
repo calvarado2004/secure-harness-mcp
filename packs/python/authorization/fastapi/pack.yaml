@@ -43,35 +43,20 @@ framework:
   # class-name substrings that mark a schema as client-supplied rather than server-emitted
   inbound_name_hints: [create, update, in, register, request]
 
+# The three route-level invariants are declared in general/authorization, because they are
+# the same question in every framework and a Node or Flask project cannot load a Python pack
+# to get at them. This pack BINDS them and attaches the FastAPI worked example: the remedy
+# prose has to be framework-neutral where it is declared, and a dependency-injection example
+# is the wrong thing to hand a developer whose guard is a decorator or a middleware.
+binds:
+  - id: authz/unauthenticated-data-access
+    reference: references/authorizing-handlers.md
+  - id: authz/authenticated-but-unauthorized
+    reference: references/authorizing-handlers.md
+  - id: authz/client-settable-privilege
+    reference: references/authorizing-handlers.md
+
 rules:
-  authz/unauthenticated-data-access:
-    reference: references/authorizing-handlers.md
-    sev: HIGH
-    remedy: >-
-      add the project's identity dependency to this handler (e.g. `user: User =
-      Depends(get_current_user)`); if the endpoint is genuinely public, say so explicitly
-      rather than by omission
-    attack: >-
-      an anonymous caller requests the endpoint and receives records the application intended
-      to show only to authenticated users
-  authz/authenticated-but-unauthorized:
-    reference: references/authorizing-handlers.md
-    sev: MEDIUM
-    remedy: >-
-      authorize on the caller's role or on ownership of the object being modified, and return
-      403 when it fails; authentication is not authorization
-    attack: >-
-      any registered user -- including one who self-registered seconds ago -- modifies or
-      deletes another user's records
-  authz/client-settable-privilege:
-    reference: references/authorizing-handlers.md
-    sev: HIGH   # MEDIUM when the field is not in the general `hard_priv` vocabulary
-    remedy: >-
-      remove the field from the inbound schema and set it server-side; privilege must never be
-      a request parameter
-    attack: >-
-      the attacker POSTs a role field to the public registration endpoint and is an
-      administrator (this is E5, the exploit that survives every arm in study 2)
   authz/shipped-default-credential:
     sev: HIGH   # LOW when the name is in the project's `local_stack_creds`
     remedy: >-

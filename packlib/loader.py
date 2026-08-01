@@ -89,7 +89,21 @@ class Pack:
         self.description = d.get("description", "")
         # what the pack contributes
         self.rules = d.get("rules", {}) or {}
-        self.binds = list(d.get("binds", []) or [])
+        # A binds entry is a rule id, or a mapping that also names a REFERENCE. The
+        # invariant is shared across frameworks and the worked example is not: the fix for a
+        # missing guard is a dependency in FastAPI, a decorator in Flask and a middleware in
+        # Express, and handing a Node developer the FastAPI remedy would be worse than
+        # handing them none. So the rule is declared once and each binding may attach its
+        # own example.
+        self.binds, self.bind_reference = [], {}
+        for b in (d.get("binds", []) or []):
+            if isinstance(b, dict):
+                rid = b.get("id") or b.get("rule")
+                self.binds.append(rid)
+                if b.get("reference"):
+                    self.bind_reference[rid] = b["reference"]
+            else:
+                self.binds.append(b)
         self.vocabulary = d.get("vocabulary", {}) or {}
         self.facts = d.get("facts", {}) or {}
         self.requires_facts = list(d.get("requires_facts", []) or [])
@@ -353,6 +367,15 @@ def _apply(pack, rules, vocabulary, facts, scan, fp_rules, suppressed):
                 f"it (with its remedy and its stated attack or failure).")
         rules[rid]["history"] = rules[rid]["history"] + [f"detected by {where}"]
         rules[rid].setdefault("bound_by", []).append(pack.id)
+        ref = pack.bind_reference.get(rid)
+        if ref:
+            rp = os.path.join(pack.dir, ref)
+            if not os.path.isfile(rp):
+                raise PackError(f"{where}: binding '{rid}' names reference '{ref}' which "
+                                f"does not exist.")
+            rules[rid]["reference_path"] = os.path.relpath(rp, ROOT)
+            with open(rp, encoding="utf8") as fh:
+                rules[rid]["reference_text"] = fh.read()
 
     # --- reweight: legal, but only onto the shared scale, and only for rules that exist
     for rid, sev in pack.reweight.items():

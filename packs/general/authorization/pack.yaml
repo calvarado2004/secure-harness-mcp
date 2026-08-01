@@ -1,0 +1,66 @@
+id: general/authorization
+version: 1
+tier: commodity
+axis: authorization
+description: Authorization invariants that are the same question in every framework.
+
+# WHY THESE MOVED HERE
+# They were declared in the FastAPI pack, which worked while FastAPI was the only framework
+# with an authorization lane and stopped working the moment a second one existed. A Node
+# project loads no Python packs, so an Express lane binding these ids failed to resolve and
+# the loader said so plainly. The rules were never Python's: "does this handler require a
+# caller" and "does it decide anything about who that caller is" are the same questions in
+# FastAPI, Flask, Express, Rails and Spring. Only the reading is framework-specific, and
+# increasingly only the WORKED EXAMPLE is too, which is why a binding may attach its own.
+#
+# Moving a declaration is not free and it must not move a number. Every id, severity, remedy,
+# attack and overreach below is byte-identical to what the FastAPI pack declared, so the
+# brownfield subject scores exactly what it scored before: 132 weighted over 57 findings.
+
+rules:
+  authz/unauthenticated-data-access:
+    sev: HIGH
+    remedy: >-
+      add the project's identity dependency to this handler (e.g. `user: User =
+      Depends(get_current_user)`); if the endpoint is genuinely public, say so explicitly
+      rather than by omission
+    attack: >-
+      an anonymous caller requests the endpoint and receives records the application intended
+      to show only to authenticated users
+    overreach: >-
+      NOT EVERY ANONYMOUS ENDPOINT IS A DEFECT. A login route cannot require a login, a health
+      check exists to be polled, and a product's public catalogue is public on purpose. A rule
+      that cannot be told which routes are anonymous by design flags all of them, the
+      practitioner learns to skim past this axis, and the one real finding goes with it. The
+      project declares its public surface and the rule stays silent there.
+  authz/authenticated-but-unauthorized:
+    sev: MEDIUM
+    remedy: >-
+      authorize on the caller's role or on ownership of the object being modified, and return
+      403 when it fails; authentication is not authorization
+    attack: >-
+      any registered user -- including one who self-registered seconds ago -- modifies or
+      deletes another user's records
+    overreach: >-
+      USING THE PRINCIPAL IS ALREADY AUTHORIZATION. A handler that scopes its query by the
+      caller has decided who may see what, and reporting it would push a developer to add a
+      redundant role check to code that is already correct. Worse, the obvious way to satisfy
+      a too-strict reading is to require an administrator everywhere, which produces an
+      application where the people who do the work cannot do it, and that fix gets reverted
+      along with the protection it carried.
+  authz/client-settable-privilege:
+    sev: HIGH
+    remedy: >-
+      remove the field from the inbound schema and set it server-side; privilege must never be
+      a request parameter
+    attack: >-
+      the attacker POSTs a role field to the public registration endpoint and is an
+      administrator (this is E5, the exploit that survives every arm in study 2)
+    overreach: >-
+      A SERVER-EMITTED FIELD IS NOT A CLIENT-SETTABLE ONE. Responses carry roles, and so do
+      administrative schemas that only an authorized caller can submit. A rule that read every
+      mention of `role` as an escalation would flag the very endpoint an administrator uses to
+      grant one. It fires on INBOUND schemas, and a project with an admin-only grant path
+      declares it rather than deleting the feature.
+
+limits: LIMITS.md

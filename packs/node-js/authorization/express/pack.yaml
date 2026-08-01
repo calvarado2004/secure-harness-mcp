@@ -1,0 +1,64 @@
+id: node-js/authorization/express
+version: 1
+tier: framework
+runtime: node-js
+axis: authorization
+description: Authorization lane for Express — the third framework to need the same rules.
+
+# WHY THIS PACK EXISTS
+# `node-js` was a detect-only runtime: it claimed its files and shipped no lanes, so a real
+# product's entire backend was reported UNREAD. That is the honest verdict and it is not a
+# useful one for long. Express expresses identity as middleware positioned before the handler
+# in a route's argument list, which the FastAPI and Flask lanes cannot see, so to them every
+# Express route looks unguarded.
+#
+# WHY IT BINDS RATHER THAN DECLARES
+# Same reason as the Flask pack. `authz/unauthenticated-data-access` means one thing and
+# carries one weight whether the missing guard is a dependency, a decorator or a middleware.
+# Only the reading is framework-specific, and a repository mixing frameworks should score one
+# defect per defect.
+#
+# THE DISTINCTION THIS FRAMEWORK FORCED
+# Express projects routinely ship two identity middlewares: one that REQUIRES a caller and
+# answers 401 without one, and one that attaches a caller when a token happens to be present
+# and continues either way. In a route chain they are indistinguishable and they are
+# opposites, so they are declared separately and only the first counts as a guard.
+
+requires_facts:
+  - auth_middleware           # middleware that REQUIRES an authenticated caller
+  - optional_auth_middleware  # middleware that attaches one if present; NOT a guard
+  - public_routes             # endpoints anonymous ON PURPOSE
+  - sensitive_routes          # endpoints the project ties to an authenticated caller
+
+lanes:
+  express_authz: {engine: internal_text, detector: express_authz.scan_express_authz, input: tree}
+
+framework:
+  route_call: [router, app]
+  route_methods: [get, post, put, delete, patch]
+  write_methods: [POST, PUT, DELETE, PATCH]
+  mount_call: use              # app.use('/prefix', router) supplies the mounted path
+  principal_reads: [req.userId, req.username, req.user, res.locals.user]
+
+binds:
+  - authz/unauthenticated-data-access
+  - authz/authenticated-but-unauthorized
+
+# Undeclared routes produce advisories, never gated findings. See LIMITS.md.
+undeclared_route_verdict: advisory
+
+limits: LIMITS.md
+
+controls:
+  positive:
+    - file: controls/positive/unguarded
+      must_flag: [authz/unauthenticated-data-access]
+  negative:
+    - file: controls/negative/guarded
+      must_not_flag: [authz/unauthenticated-data-access,
+                      authz/authenticated-but-unauthorized]
+      covers:
+        - "a requiring identity middleware in the chain IS a guard"
+        - "a route the project declared public is not an omission"
+        - "a write that uses the caller to scope its work is authorized"
+        - "a word-boundary match: `middlegame` is not `game`"
