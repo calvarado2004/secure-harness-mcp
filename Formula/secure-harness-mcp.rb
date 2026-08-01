@@ -27,7 +27,15 @@ class SecureHarnessMcp < Formula
     venv = libexec/"venv"
     system Formula["python@3.12"].opt_bin/"python3.12", "-m", "venv", venv
     system venv/"bin/pip", "install", "--quiet", "--upgrade", "pip"
-    system venv/"bin/pip", "install", "--quiet", *File.read("requirements.txt").split
+    # Strip comments before splitting. `File.read(...).split` splits on ALL whitespace, so a
+    # commented requirements file hands pip every word of every comment as an argument, and
+    # the install dies on whichever one happens to start with a dash. The comments in that
+    # file explain why `mcp>=1.2` deliberately spans two incompatible majors, so deleting
+    # them to suit the formula would be the wrong repair.
+    reqs = File.read("requirements.txt").lines
+               .map { |line| line.sub(/#.*/, "").strip }
+               .reject(&:empty?)
+    system venv/"bin/pip", "install", "--quiet", *reqs
     # Top-level modules AND the package directories. Installing only Dir["*.py"] shipped a
     # formula whose pack server could not start: the rules, the profiles and the lane
     # detectors all live in directories, and a glob over files silently omits every one.
