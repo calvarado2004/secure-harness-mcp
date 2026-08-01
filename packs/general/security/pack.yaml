@@ -89,6 +89,11 @@ rules:
       A COMMITTED TEMPLATE IS THE FIX, NOT THE DEFECT. `.env.example`, `.env.sample` and
       `.env.template` exist precisely so the keys can be committed without the values, and a
       rule that flagged them would be telling a project to delete its own documentation. The
-      rule therefore fires only on a file that is TRACKED, that is not a template by name,
-      and whose values are not placeholders. An untracked `.env` on a developer's disk is
-      not this rule's business at all: that is where secrets are supposed to live.
+      rule therefore fires only on a file that NOTHING STOPS FROM BEING COMMITTED, that is
+      not a template by name, and whose values are not placeholders. A `.env` the project
+      has declared uncommittable in `.gitignore` is not this rule's business at all: that is
+      where secrets are supposed to live. The test is deliberately intent rather than
+      current tracking, because tracking is a fact about whichever repository encloses the
+      copy being scanned and changes between a checkout, an install and an unpacked
+      artifact, while a credential file nothing protects will be committed by the next
+      `git add .`.

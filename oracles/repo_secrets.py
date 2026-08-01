@@ -46,36 +46,45 @@ SKIP_DIRS = {"__pycache__", ".git", "node_modules", ".venv", "images"}
 
 
 def _would_be_committed(root, rel):
-    """Would this file end up in the repository? Untracked secrets are where secrets belong.
+    """Is anything stopping this credential file from reaching the repository?
 
-    Two ways to answer, because one of them is often unavailable. If the tree is a git
-    checkout, git knows exactly. If it is not, the question is still answerable from intent:
-    a `.gitignore` that names the file is a project saying it must never be committed, and
-    its absence is a project that has not said so. The fallback matters more than it looks,
-    since a lane that can only answer inside a git checkout goes quiet on every extracted
-    tarball, every control fixture and every artifact bundle a reviewer unpacks.
+    The question is deliberately NOT "is it tracked right now". Tracking is a fact about
+    whichever git repository happens to enclose the copy being scanned, and that differs
+    between a developer's checkout, an installed copy under a package prefix, and a tarball
+    a reviewer unpacked. A lane whose verdict changes with the packaging is not measuring
+    the program.
+
+    What does not change is intent. A `.gitignore` that covers the file is a project saying
+    it must never be committed, and that is the case this rule has no business in. Anything
+    else is a credential file that will be committed the moment somebody types `git add .`,
+    which is exactly the moment worth warning about, whether or not it has happened yet.
     """
-    try:
-        r = subprocess.run(["git", "-C", root, "rev-parse", "--is-inside-work-tree"],
+    try:                                  # git handles nesting, negation and global excludes
+        r = subprocess.run(["git", "-C", root, "check-ignore", "-q", rel],
                            capture_output=True, text=True, timeout=20)
-        if r.returncode == 0 and r.stdout.strip() == "true":
-            t = subprocess.run(["git", "-C", root, "ls-files", "--error-unmatch", rel],
-                               capture_output=True, text=True, timeout=20)
-            return t.returncode == 0
+        if r.returncode == 0:
+            return False                  # declared uncommittable
+        if r.returncode == 1:
+            return True                   # git answered: nothing is stopping it
     except (OSError, subprocess.SubprocessError):
         pass
-    # Not a checkout: fall back to what the project declared about this path.
+    # No git here. Fall back to reading the declarations by hand.
     name = os.path.basename(rel)
     for d in (os.path.dirname(os.path.join(root, rel)), root):
         gi = os.path.join(d, ".gitignore")
-        if os.path.isfile(gi):
-            try:
-                for line in open(gi, encoding="utf8", errors="replace"):
-                    pat = line.strip()
-                    if pat and not pat.startswith("#") and pat.strip("/") in (name, rel):
-                        return False      # declared uncommittable
-            except OSError:
-                pass
+        if not os.path.isfile(gi):
+            continue
+        try:
+            for line in open(gi, encoding="utf8", errors="replace"):
+                pat = line.strip()
+                if not pat or pat.startswith("#"):
+                    continue
+                if pat.startswith("!") and pat.lstrip("!").strip("/") in (name, rel):
+                    return True           # explicitly un-ignored
+                if pat.strip("/") in (name, rel):
+                    return False
+        except OSError:
+            pass
     return True
 
 
