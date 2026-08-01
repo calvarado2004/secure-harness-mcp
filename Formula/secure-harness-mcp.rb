@@ -83,8 +83,13 @@ class SecureHarnessMcp < Formula
     system bin/"secure-harness-proxy", "--self-test"
     # The pack system ships its own admission test and its own controls; run both, so a
     # formula that installed an incomplete tree fails here rather than in someone's editor.
-    system libexec/"venv/bin/python", "-m", "packlib.packtest"
-    system libexec/"venv/bin/python", "-m", "packlib.selftest_packs"
-    system libexec/"venv/bin/python", libexec/"packlib/mcp_server.py", "--selftest"
+    # Run them from libexec: `brew test` executes in a scratch directory, where `-m
+    # packlib.packtest` cannot find the package and the failure reads like a broken install
+    # rather than a wrong working directory.
+    cd libexec do
+      system libexec/"venv/bin/python", "-m", "packlib.packtest"
+      system libexec/"venv/bin/python", "-m", "packlib.selftest_packs"
+      system libexec/"venv/bin/python", libexec/"packlib/mcp_server.py", "--selftest"
+    end
   end
 end
