@@ -36,6 +36,8 @@ KNOWN_DEFAULTS = {
     ("postgres_user", "postgres"), ("postgres_password", "postgres"),
     ("mysql_root_password", "root"),
 }
+# `${VAR:-default}` and `${VAR-default}`: an environment lookup WITH a fallback.
+_ENV_DEFAULT = re.compile(r"^\$\{([A-Za-z_]\w*):?-(.+)\}$")
 SECRETISH = ("secret", "password", "token", "api_key", "apikey", "private_key", "root_user")
 
 
@@ -148,7 +150,30 @@ def scan_compose(path, declared_published=None):
             key, val = str(k).lower(), str(v)
             if not any(s in key for s in SECRETISH):
                 continue
-            if "${" in val:                      # taken from the environment: the fix
+            # `${VAR}` is not automatically the fix. Compose has two shapes and they are
+            # opposites. `${VAR:?required}` refuses to start without the value, and a bare
+            # `${VAR}` at least ships nothing. `${VAR:-default}` ships the default, and it is
+            # the shape that reaches production most often precisely because everything works
+            # locally and nobody notices the fallback was taken. This lane skipped every
+            # `${` and so was blind to the commonest spelling of a shipped signing key: both
+            # subjects this harness has been pointed at carry one, and neither was reported.
+            m = _ENV_DEFAULT.match(val.strip())
+            if "${" in val and not m:
+                continue                         # required, or supplied with no fallback
+            if m:
+                var, fallback = m.group(1), m.group(2)
+                findings.append({
+                    "tool": "compose", "rule": "container/shipped-service-credential",
+                    "file": os.path.basename(path), "line": line_of(f"{k}:"),
+                    "sev": "MEDIUM",
+                    "message": (f"service `{name}` sets {k} from `${{{var}}}` with a literal "
+                                f"fallback, so a deployment that does not set {var} is "
+                                f"secured with the value written here"),
+                    "remedy": ("use `${" + var + ":?set this before starting}` so the stack "
+                               "refuses to come up without the value. A default is a "
+                               "hardcoded credential with extra steps: it works locally, "
+                               "nobody notices the fallback was used, and it ships"),
+                })
                 continue
             known = (key, val.lower()) in KNOWN_DEFAULTS
             findings.append({
