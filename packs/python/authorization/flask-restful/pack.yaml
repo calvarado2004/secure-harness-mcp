@@ -1,0 +1,102 @@
+id: python/authorization/flask-restful
+version: 1
+tier: framework
+runtime: python
+axis: authorization
+description: Authorization lane for flask-restful — the fifth framework, and the first write-side rule.
+
+# WHY THIS PACK EXISTS
+# flask-restful is the third Flask mounting form, after `@app.route` (the Flask pack) and the
+# class-plus-namespace shape of flask-restx. Here the API is mounted with a CALL,
+# `api.add_resource(Cls, "/path")`, and the verb is the method name. Every earlier lane finds
+# routes by walking DECORATORS, so to them a flask-restful module contains no routes at all: it
+# is opened, parsed, and reported clean. On the subject this pack was written for that was an
+# entire REST API — 64 mounted resources — invisible to the axis meant to read it, while
+# `bandit` read the same files and reported nothing, because a missing authorization decorator
+# is not a pattern it can express. The blind run recorded exactly this: one handler seen in the
+# whole repository (evidence/BLIND-TRANSFER-RESULT.md). A file one lane read and another could
+# not parse is indistinguishable, in the inventory, from a file that was checked. This pack adds
+# the reading; it does not change what any rule decides.
+#
+# WHY IT BINDS RATHER THAN DECLARES
+# Same reason as the Flask, Express and flask-restx packs. `authz/unauthenticated-data-access`
+# means one thing and carries one weight whether the missing guard is a dependency, a decorator,
+# a middleware or a Resource method. Only the reading is framework-specific.
+#
+# THE RULE IT BRINGS INTO PLAY, AND WHY IT IS NOT "NO AUTHORIZATION"
+# `authz/mutation-guard-weaker-than-siblings` is declared in general/authorization because the
+# defect is framework-independent, and exercised here because reading it needs the add_resource
+# parser. The handler that forced it (Netflix Lemur, GHSA-x3vf-mgxj-7785) mounts three verbs at
+# one path: POST and DELETE require the administrator role, PUT requires only membership of the
+# role being edited, so any member can rewrite the role's membership. Every rule that asks "does
+# this handler check anything?" answers yes — PUT does have an inline permission check — which is
+# why the defect survived both commodity engines. The rule asks a different question: does this
+# WRITE carry the guard its own siblings on the same resource carry?
+#
+# WHAT THE PROJECT SUPPLIES, AND WHAT THE LANE INFERS
+# Supplied: which guards subsume a per-resource check (an admin already holds every authority).
+# That names a role, not an endpoint. Inferred: which decorator is the project's access
+# convention, how widely it is established (>= min_carriers handlers), and WHICH mutating
+# handler departs from it. A rule told which endpoint is broken proves nothing; a rule told what
+# subsumes what, and left to find the site, is one that transferred from CTFd to Lemur unchanged.
+#
+# THE READ RULE IS BYTE-IDENTICAL ACROSS MOUNTING FORMS
+# `authz/guard-inconsistent-with-peers` is bound here too, and its decision functions are
+# imported from the flask-restx lane and re-checked at runtime (assert_rule_logic_unchanged), so
+# "the same rule, a different parser" is machine-checked rather than asserted. It is silent
+# without a `protected_data` policy, which is the state Lemur runs in.
+
+requires_facts:
+  - protected_data      # [{noun, identity_attrs, guard?}] — the policy, never a site
+  - dominating_guards   # guards that subsume a per-resource check, e.g. admin_permission.require
+
+lanes:
+  flask_restful_authz:
+    engine: internal_ast
+    detector: flask_restful_authz.scan_flask_restful_authz
+    input: tree
+
+framework:
+  route_decorator: route          # plain @bp.route views coexist with mounted Resources
+  route_methods: [get, post, put, delete, patch]
+  read_methods: [GET]             # a disclosure guard controls reads; a write reveals nothing
+  mutating_methods: [POST, PUT, PATCH, DELETE]
+  mount_call: add_resource        # api.add_resource(Cls, "/path") supplies the path
+  mount_prefix_from: Blueprint    # ...under the Blueprint's url_prefix
+  class_decorators_inherit: true  # a class-level guard guards every verb the Resource serves
+  min_carriers: 3                 # below this a decorator is a coincidence, not a convention
+
+binds:
+  - authz/unauthenticated-data-access
+  - authz/authenticated-but-unauthorized
+  - authz/client-settable-privilege
+  - authz/guard-inconsistent-with-peers
+  - authz/mutation-guard-weaker-than-siblings
+
+# The POLICY the controls assume. `dominating_guards` names the guard an administrator already
+# holds; `protected_data` is empty because the write-side rule needs no disclosure policy, which
+# is also how Lemur runs. Named here so the control is exercised with the same shape the subject
+# uses, and it names no file, route or handler.
+control_facts:
+  protected_data: []
+  dominating_guards: [admin_permission.require]
+
+controls:
+  positive:
+    - file: controls/positive
+      must_flag:
+        - authz/mutation-guard-weaker-than-siblings
+  negative:
+    - file: controls/negative
+      must_not_flag:
+        - authz/mutation-guard-weaker-than-siblings
+        - authz/guard-inconsistent-with-peers
+      covers:
+        - "a class-mounted Resource IS a route: add_resource supplies the path, the verb is the method name"
+        - "an add_resource mount resolves under the Blueprint prefix to the path a caller reaches"
+        - "a mutating verb that carries the guard its siblings carry is conformant"
+        - "a request-body validator (validate_schema) shared by two siblings is not an access guard"
+        - "a guard carried by fewer than three handlers is a coincidence, not a convention"
+        - "with no protected_data policy the inherited read rule stays silent"
+
+limits: LIMITS.md

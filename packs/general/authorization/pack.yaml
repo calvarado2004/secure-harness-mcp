@@ -78,5 +78,26 @@ rules:
       admin surface as broken and teach the reader to skim the axis. It fires only where the
       project has ESTABLISHED a guard across several handlers, only on reads, and only where
       no stronger guard already applies.
+  authz/mutation-guard-weaker-than-siblings:
+    sev: HIGH
+    remedy: >-
+      apply to this mutating handler the authorization guard its sibling verbs on the same
+      resource already carry; if this verb is deliberately less restricted than its siblings,
+      state that rather than leaving it to omission
+    attack: >-
+      a caller with only enough privilege to reach the resource invokes the one write verb
+      that omits the guard its siblings carry -- e.g. any member of a role rewrites that
+      role's membership through the PUT that, unlike the resource's POST and DELETE, requires
+      no administrator (GHSA-x3vf-mgxj-7785, Netflix Lemur)
+    overreach: >-
+      A DIFFERENT GUARD IS NOT A MISSING ONE, AND A VALIDATOR IS NOT A GUARD. A handler
+      restricted to administrators does not also need a per-resource check, a request-body
+      validator shared by two siblings is not an authorization decision, and a decorator
+      carried by fewer than a handful of handlers is a coincidence rather than a convention.
+      A rule that ignored those would report a schema validator as the missing guard and spend
+      repair rounds on it. It fires only where the project has ESTABLISHED an access guard
+      across several handlers, only on mutating verbs, only where a sibling on the same
+      resource carries it and this one does not, and never where a stronger guard already
+      applies.
 
 limits: LIMITS.md

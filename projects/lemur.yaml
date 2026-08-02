@@ -1,0 +1,58 @@
+id: projects/lemur
+version: 1
+tier: project
+description: >-
+  Netflix Lemur, an X.509 certificate-management service in Flask with a flask-restful REST API
+  (Resource classes mounted by api.add_resource, verb = method name). Apache-2.0. Like CTFd and
+  unlike the three subjects we wrote, NOBODY HERE WROTE IT: it is third-party software with its
+  own maintainers, its own users and its own advisory history, pinned at the tag that predates a
+  published fix (v1.9.1, fixed in v1.9.2).
+
+# WHY THIS SUBJECT, AND WHY THIS PROFILE STATES A POLICY AND NEVER A SITE
+# The standing objection to every number this project reports is that we wrote the code, we
+# wrote the oracles, and the oracles know the defects. CTFd answered the first half. Lemur is
+# picked to answer a second, sharper half: its authorization lane (flask_restful_authz) was
+# frozen — content-hashed, committed, LANE-FREEZE.txt written — BEFORE this subject was cloned.
+# So the rule that finds the defect provably predates the subject.
+#
+# That only holds if this profile names no endpoint, no file and no guard. GHSA-x3vf-mgxj-7785
+# is a mutating handler (PUT /api/1/roles/<id>) that omits the authorization decorator its
+# sibling verbs on the same resource carry. The lane infers, from the repository alone, which
+# decorator is the project's access convention, how widely it is established, and which mutating
+# handler departs from it. Nothing below tells it any of that.
+
+runtimes: auto
+axes: [security, authorization]
+# flask-restful is the add_resource mounting form; its pack binds the flask_restful_authz lane
+# and the write-side rule the Lemur CVE needs, and reuses the flask-restx decision functions for
+# the read rule. The plain-flask lane is not used here.
+frameworks: [flask-restful]
+
+facts:
+  # ---- the sibling rule: the policy, and nothing else --------------------------------------
+  # An administrator already holds every role's authority, so a handler restricted to
+  # administrators does not additionally need a per-resource guard: the stronger guard subsumes
+  # the weaker. This is the ONLY hint the lane is given, and it names a role, not an endpoint.
+  dominating_guards: [admin_permission.require]
+
+  # GHSA-x3vf-mgxj-7785 is a MISSING-GUARD defect (a mutating verb omits the decorator its
+  # siblings carry), not a disclosure. The inherited disclosure rule is therefore given no
+  # protected data to reason about, so it stays silent — which is exactly what the blind run
+  # with no profile did (evidence/LEMUR-RESULT.md: one finding, the sibling rule). Declaring a
+  # noun here would manufacture disclosure findings on role-reading handlers that are not the
+  # defect. The empty list satisfies the pack's fact requirement without inventing a policy.
+  protected_data: []
+
+  # ---- container lane ----------------------------------------------------------------------
+  # Read from Lemur's own root docker-compose.yml (its test stack): postgres and redis publish
+  # ports; the application service does not exist there. The deployment under deploy/ is the
+  # harness's and is excluded from the security scan by lemur_security.py.
+  published_services: [postgres, redis]
+
+deployment:
+  orchestrator: compose
+
+# WHAT THIS PROFILE DELIBERATELY DOES NOT CLAIM
+# Lemur's AngularJS frontend, its plugin entry points, its Celery task surface and its
+# migrations are UNREAD. A clean score from this profile is a statement about the REST API
+# surface reachable through gunicorn and about nothing else.
