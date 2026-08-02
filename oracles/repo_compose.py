@@ -194,6 +194,25 @@ def scan_compose(path, declared_published=None):
     return findings, None
 
 
+# A compose file that only ever describes a developer's laptop is not a deployment, and a
+# credential in one is not a shipped default. Measured on eight third-party repositories, every
+# finding this lane raised was of that kind: a test database password in
+# `.devcontainer/tests/`, a local Postgres in a contributor's stack. The rule was right about
+# the literal and wrong about the risk, and a tool that cannot tell the two apart teaches its
+# reader to skim the axis. The distinction is the path, which is how the projects themselves
+# signal intent.
+DEV_ONLY_PARTS = {".devcontainer", "tests", "test", "examples", "example", "docs",
+                  "fixtures", "e2e", "ci", ".github", "contrib", "sandbox"}
+
+
+def _dev_only(rel):
+    parts = {p.lower() for p in rel.replace("\\", "/").split("/")[:-1]}
+    if parts & DEV_ONLY_PARTS:
+        return True
+    name = rel.replace("\\", "/").split("/")[-1].lower()
+    return any(k in name for k in ("dev", "test", "local", "example", "sample"))
+
+
 def scan_tree(root, declared_published=None):
     out = []
     for dirpath, dirnames, filenames in os.walk(root):
@@ -206,8 +225,18 @@ def scan_tree(root, declared_published=None):
             found, err = scan_compose(os.path.join(dirpath, fn), declared_published)
             if found is None:
                 return None, err
+            rel = os.path.relpath(os.path.join(dirpath, fn), root)
+            dev = _dev_only(rel)
             for f in found:
-                f["file"] = os.path.relpath(os.path.join(dirpath, fn), root)
+                f["file"] = rel
+                if dev:
+                    # Reported, never gated: a developer's stack is a decision the project has
+                    # already made, not a defect to spend a repair round on.
+                    f["advisory"] = True
+                    f["sev"] = "INFO"
+                    f["message"] = f.get("message", "") + (
+                        " (this compose file describes a development or test stack, so it is "
+                        "reported for review rather than counted against the deployment)")
             out += found
     return out, None
 

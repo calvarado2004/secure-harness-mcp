@@ -1,0 +1,73 @@
+id: general/gotchas
+version: 1
+tier: commodity
+axis: security
+description: Defects no project's trust boundaries can make correct.
+
+# WHY THIS PACK IS SEPARATE FROM EVERY OTHER SECURITY PACK
+# The rest of the security axis asks questions that need the project to speak first, and
+# correctly says nothing about a repository nobody has described. This pack holds the
+# complement: rules decidable from the file alone. That is what lets the harness say something
+# useful the first time it is pointed at unfamiliar code, which is what a practitioner
+# actually does before writing any profile.
+#
+# WHAT IT DELIBERATELY DOES NOT DUPLICATE
+# `bandit` and Semgrep already find hardcoded secrets, `debug=True`, disabled TLS
+# verification, pickle on untrusted input and shell interpolation. Shipping a worse copy of
+# them helps nobody. Measured against both engines on a file carrying four policy-free
+# classes, each found the hardcoded key and the debug flag and missed the other two. Those
+# two are what this pack adds, and it adds nothing else.
+#
+# DEPLOYMENT CONTEXT IS PART OF THE RULE, NOT A SUPPRESSION
+# A finding in a file that only ever describes a developer's machine is reported and never
+# gated. Before that distinction existed, every policy-free finding raised across eight
+# third-party repositories was a test fixture.
+
+requires_facts: []          # the point of this pack: it needs none
+
+lanes:
+  gotchas:
+    engine: internal_ast
+    detector: gotchas.scan_tree
+    input: tree
+
+rules:
+  cors/wildcard-with-credentials:
+    sev: HIGH
+    remedy: >-
+      list the origins permitted to send credentialed requests, or stop attaching credentials;
+      a wildcard origin and credentials cannot both hold
+    attack: >-
+      any site the victim visits issues a credentialed cross-origin request and reads the
+      response, because the browser refuses a literal wildcard with credentials so the
+      framework echoes the caller's own origin instead
+    overreach: >-
+      A WILDCARD ALONE IS NOT A DEFECT. A public read-only API is meant to be callable from
+      anywhere, and flagging it would bury the pairing that matters. This fires only when a
+      wildcard origin and credentials appear together, which no deployment makes safe.
+  cookie/insecure-session-flag:
+    sev: MEDIUM
+    remedy: >-
+      leave the flag at its secure default; if a development stack needs it disabled, disable
+      it there rather than in the configuration that ships
+    attack: >-
+      with HttpOnly off, any injected script reads the session token; with Secure off, the
+      token travels in clear on the first plain-HTTP request
+    overreach: >-
+      A FLAG ABSENT IS NOT A FLAG DISABLED. Frameworks default these to safe values, so
+      silence means the default holds and there is nothing to report. This fires only on an
+      explicit assignment to false, which is a decision somebody made.
+
+controls:
+  positive:
+    - file: controls/positive
+      must_flag: [cors/wildcard-with-credentials, cookie/insecure-session-flag]
+  negative:
+    - file: controls/negative
+      must_not_flag: [cors/wildcard-with-credentials, cookie/insecure-session-flag]
+      covers:
+        - "a wildcard origin WITHOUT credentials is a public API, not a defect"
+        - "credentials WITH a named origin list is the correct pairing"
+        - "cookie flags left at their secure defaults are silence, not a finding"
+
+limits: LIMITS.md
