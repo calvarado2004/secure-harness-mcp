@@ -12,6 +12,14 @@ It is the operational form of a simple research result: **how you wrap the model
 determines output security far more than which model you pick, and a secure-coding *prompt alone* is a
 trap — only the feedback loop delivers both security and buildability.**
 
+> **Scope.** This project has two layers, and the research uses the second. The **snippet** layer
+> (`secure_generate`, `harden_code`, `audit_code`, `score_code`) generates and hardens code in
+> isolation; its build check is Go-specific and `secure_generate` still defaults to `language="go"`.
+> The **repository** layer — policy packs plus `repo_inventory` / `module_guidance` — reads a project
+> that already exists against the policy that project declares, and it is what the accompanying paper
+> measures across five subjects in Python and TypeScript. If you came from the paper, the packs are
+> what you want; the snippet tools are older and neither necessary nor used for any result in it.
+
 > ⚠️ **A strong filter, not a proof.** The harness removes what its instruments can see (build errors,
 > pattern detectors, `bandit`) and reports honest residuals for the rest. It does not guarantee
 > security — static analysis still misses classes such as argument injection. Treat its output as
@@ -21,18 +29,26 @@ trap — only the feedback loop delivers both security and buildability.**
 
 ## What it gives you
 
-**MCP tools** (Go-focused: build + pattern-scan + repair loop):
+**Repository tools** — the layer the research uses. These read a project you already have, against
+the policy it declares:
 
 | tool | what it does |
 |---|---|
-| `secure_generate(spec)` | write new Go for a spec, guided prompt **+ build/scan repair loop**; returns vetted code |
+| `repo_inventory(path)` | inventory a repository by runtime, naming what has a lane and what is **unread** rather than clean |
+| `module_guidance(path)` | the rules that apply to a given module, routed by its runtime and the project's profile |
+
+**Snippet tools** — the older surface, for generating and hardening code in isolation:
+
+| tool | what it does |
+|---|---|
+| `secure_generate(spec, language=…)` | write new code for a spec, guided prompt **+ build/scan repair loop**; returns vetted code |
 | `harden_code(code)` | take existing code, fix its weaknesses, return a **before/after** comparison |
 | `audit_code(code)` | run the pattern detectors (+ CWE + rationale) — candidates, not verdicts |
 | `score_code(code)` | build/robustness + findings scorecard for a snippet |
 
-**A transparent proxy** (`secure-harness-proxy`, Go **and** Python): an OpenAI-compatible endpoint that
-fronts any model; every completion containing code is run through the loop automatically, so *any*
-client pointed at it is hardened with no client change.
+**A transparent proxy** (`secure-harness-proxy`, shipped in two implementations, Go and Python): an
+OpenAI-compatible endpoint that fronts any model; every completion containing code is run through the
+loop automatically, so *any* client pointed at it is hardened with no client change.
 
 ## Policy packs: the rule set as an editable, testable artifact
 
@@ -51,12 +67,10 @@ packs/<runtime>/<axis>/<tier>/pack.yaml
 mean the same thing everywhere, and cross-language rules that each language pack *binds* to its own
 detector, so one invariant keeps one id and one weight across a polyglot repository.
 
-**Two MCP tools** answer the questions an agent in an unfamiliar repository actually has:
-
-| tool | what it does |
-|---|---|
-| `repo_inventory(repo, profile)` | routes every file to the packs that read it, and reports what **nothing** reads |
-| `module_guidance(repo, path, profile)` | the rules that apply to *this* module because of its language, plus the project's declared facts and deployment context |
+The two repository tools above are how an agent in an unfamiliar repository asks the packs a
+question — `repo_inventory(repo, profile)` routes every file to the packs that read it and reports
+what **nothing** reads; `module_guidance(repo, path, profile)` returns the rules that apply to *this*
+module because of its language, plus the project's declared facts and deployment context.
 
 Run it standalone:
 
@@ -155,7 +169,7 @@ flowchart TD
 
     GEN <-->|OpenAI API| BE["Model backend<br/>vLLM · Ollama · llama.cpp · hosted<br/>SECURE_HARNESS_MODEL_URL"]
 
-    subgraph instr["Self-tested instruments — +/- controls, documented FP quarantine"]
+    subgraph instr["Self-tested instruments (snippet layer) — +/- controls, documented FP quarantine"]
         direction TB
         I1["go build / go vet"]
         I2["gosec"]
@@ -199,8 +213,9 @@ while genuine injection (`shell=True`) stays blocking.
 ## Requirements
 
 - **Python 3.10+** with `mcp`, `PyYAML` (and `bandit` for the Python proxy path).
-- **Go** on `PATH` (the build check compiles generated Go; also enables `golang.org/x/crypto` so
-  secure choices like `bcrypt` build).
+- **Go** on `PATH` — *optional, and only for the snippet tools*: it is what compiles generated Go in
+  the build check, and it enables `golang.org/x/crypto` so secure choices like `bcrypt` build. The
+  repository tools and the policy packs do not need it.
 - An **OpenAI-compatible model endpoint** (local vLLM / llama.cpp / Ollama, or a hosted API).
 
 ## Install
@@ -343,8 +358,9 @@ surfaces, configuration, the measured findings, and an honest limitations sectio
 - **Filter, not proof** — it removes what the instruments detect; static analysis misses some classes.
 - **Some weaknesses resist the loop** — e.g. code that needs restructuring rather than a local fix; the
   residual note says so plainly.
-- **Needs the toolchain** — without `go`/`bandit` present, the loop degrades to prompt-only (a trap);
-  the Docker image bakes them in so this can't happen silently.
+- **Needs the toolchain** — for the snippet layer, without `go`/`bandit` present the loop degrades to
+  prompt-only (a trap); the Docker image bakes them in so this can't happen silently. The repository
+  layer needs neither.
 - **Cost** — each risky generation costs 1 + up-to-N repair passes; well spent when quality matters.
 
 ## License
