@@ -1,6 +1,8 @@
 # Research scope
 
-This harness supports quality and security for an evolving project. Teams wire
+This existing MCP server supports quality and security for an evolving project.
+Teams first inspect the repository and define its security contract, including
+endpoints, access rules and deployment. They wire
 in requirements and validate checks, establish an acceptable MVP, then apply
 those checks to subsequent work. They periodically review the project and
 enhance the harness as features, deployment and risks change.

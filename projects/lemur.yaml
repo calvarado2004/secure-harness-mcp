@@ -8,14 +8,13 @@ description: >-
   own maintainers, its own users and its own advisory history, pinned at the tag that predates a
   published fix (v1.9.1, fixed in v1.9.2).
 
-# WHY THIS SUBJECT, AND WHY THIS PROFILE STATES A POLICY AND NEVER A SITE
-# The standing objection to every number this project reports is that we wrote the code, we
-# wrote the oracles, and the oracles know the defects. CTFd answered the first half. Lemur is
-# picked to answer a second, sharper half: its authorization lane (flask_restful_authz) was
-# frozen — content-hashed, committed, LANE-FREEZE.txt written — BEFORE this subject was cloned.
-# So the rule that finds the defect provably predates the subject.
+# PROJECT CONFIGURATION
+# Existing lanes were recorded in LANE-FREEZE.txt and missed the defect.
+# The flask-restful mount parser and successful write-side rule were developed
+# after the known advisory was selected, then validated before the repair runs.
+# This profile is part of project onboarding, not an unseen-repository test.
 #
-# That only holds if this profile names no endpoint, no file and no guard. GHSA-x3vf-mgxj-7785
+# This profile names no endpoint, file or guard. GHSA-x3vf-mgxj-7785
 # is a mutating handler (PUT /api/1/roles/<id>) that omits the authorization decorator its
 # sibling verbs on the same resource carry. The lane infers, from the repository alone, which
 # decorator is the project's access convention, how widely it is established, and which mutating

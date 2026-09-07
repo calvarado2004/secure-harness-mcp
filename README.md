@@ -2,8 +2,10 @@
 
 **A verify-and-repair secure-coding harness, exposed as an MCP server (and a transparent proxy).**
 
-The repository workflow starts with a project's quality requirements, security
-policy and executable checks. After an acceptable MVP is established, those
+The existing MCP server supplies repository inventory, module guidance and
+extensible policy packs. Start by inspecting the repository and defining its
+security contract: endpoints, access rules, protected data and deployment.
+Bind and validate the corresponding checks. After an acceptable MVP is established, those
 checks guide repairs and constrain which changes are retained. As features,
 trust boundaries and deployment choices evolve, the team reviews the project
 and enhances the harness itself. Configuration and maintenance are part of
@@ -13,6 +15,10 @@ The accompanying paper evaluates project-configured repair, not autonomous
 discovery on unseen repositories. Its controller protects measured counts;
 finite checks do not guarantee every property or authorize release. The older
 snippet tools and proxy remain available, but are not the repository controller.
+
+[HISTORY.md](HISTORY.md) traces the readers, rules and integration corrections
+that kept the harness useful. These are part of the pipeline's maintenance,
+not a separate effort to build an unseen-repository scanner.
 
 > **Scope.** This project has two layers, and the research uses the second. The **snippet** layer
 > (`secure_generate`, `harden_code`, `audit_code`, `score_code`) generates and hardens code in

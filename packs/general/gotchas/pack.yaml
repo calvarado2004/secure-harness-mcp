@@ -7,9 +7,9 @@ description: Defects no project's trust boundaries can make correct.
 # WHY THIS PACK IS SEPARATE FROM EVERY OTHER SECURITY PACK
 # The rest of the security axis asks questions that need the project to speak first, and
 # correctly says nothing about a repository nobody has described. This pack holds the
-# complement: rules decidable from the file alone. That is what lets the harness say something
-# useful the first time it is pointed at unfamiliar code, which is what a practitioner
-# actually does before writing any profile.
+# complement: checks that do not need an access-policy profile. They supplement
+# repository inspection and configured repair, without replacing the project's
+# security contract or periodic review of its requirements.
 #
 # WHAT IT DELIBERATELY DOES NOT DUPLICATE
 # `bandit` and Semgrep already find hardcoded secrets, `debug=True`, disabled TLS
