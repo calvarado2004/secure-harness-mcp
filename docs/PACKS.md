@@ -1,5 +1,10 @@
 # Packs: the rule set, as an artifact you can read, edit and test
 
+The team configures and validates these checks for its project, then maintains
+them as the application evolves beyond its MVP. Periodic project review can
+require new readers, rules or controls. This is part of the quality and security
+pipeline, not a promise of autonomous discovery on unseen repositories.
+
 A pack is one cell of a grid, and the directory layout is the grid:
 
 ```

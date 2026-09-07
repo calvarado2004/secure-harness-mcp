@@ -4,9 +4,9 @@
 WHY THIS TIER EXISTS SEPARATELY
 Most of this harness answers questions that need a project to speak first. "Is this endpoint
 authorized?" depends on who may see what, which lives in the project and not in its syntax, so
-those lanes correctly say nothing about a repository nobody has described. That is right for
-repair and useless for the first thing a practitioner does, which is point the tool at
-unfamiliar code.
+those lanes need project declarations. This tier supplements that configured workflow
+with checks that do not need an access-policy profile; it does not replace project
+onboarding or periodic review of the rules.
 
 Some defects need no such declaration. No trust boundary makes a browser credential readable
 by any script correct, and no deployment makes a wildcard origin with credentials attached

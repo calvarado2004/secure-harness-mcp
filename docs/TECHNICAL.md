@@ -1,5 +1,11 @@
 # secure-harness-mcp — Technical Reference
 
+This reference primarily documents the older snippet/proxy implementation and
+its experiments. The current repository workflow configures quality and security
+checks for a project, applies them during repair, and requires periodic review
+as that project evolves. It does not promise automatic discovery on unseen
+repositories. Start with the [README](../README.md) and [packs guide](PACKS.md).
+
 **A verify-and-repair secure-coding harness, exposed as an MCP server and a transparent
 OpenAI-compatible proxy.** This document is the deep technical companion to the top-level
 [README](../README.md) and to the research paper *"Closing the Security Gap: A Verify-and-Repair

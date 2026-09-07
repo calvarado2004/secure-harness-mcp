@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""Blind mode: find the handler its own project treats differently, with no profile at all.
+"""Advisory convention discovery to assist project configuration.
 
 WHY A SECOND MODE EXISTS
 The rest of this harness answers "is this endpoint authorized?" and that question has no
 general answer: it depends on who may see what, which lives in the project and not in its
 syntax. So every other lane requires the project to declare its trust boundaries first, and a
-project that declares nothing correctly gets no verdict. That is right for repair, where a
-wrong finding costs a repair round and can break a working product, and useless for the first
-thing a practitioner actually does, which is point the tool at a repository nobody has
-described and ask what is worth looking at.
+project that declares nothing correctly gets no policy verdict. During configuration
+or periodic project review, advisory convention discovery can identify candidates
+for human review before they become explicit repair requirements.
 
 THE PRIMITIVE THAT NEEDS NO POLICY
 A project that applies a guard to twelve handlers and omits it on the thirteenth has stated
@@ -18,7 +17,8 @@ its policy already, in code. Consistency is decidable from the repository alone:
     guard   a decorator carried by enough peers to be a convention rather than a coincidence
     finding a peer that lacks it, and that no stronger guard covers
 
-Nothing above is a fact anyone has to supply, which is what makes it usable on unseen code.
+These inputs come from the repository, without a supplied profile. This supports
+project review; it does not establish that inferred conventions are intended policy.
 The signature that defines a peer group is DERIVED, not named: it is the vocabulary the
 guarded handlers share and the rest of the codebase does not, so it adapts to whatever this
 project happens to call its data.

@@ -2,15 +2,17 @@
 
 **A verify-and-repair secure-coding harness, exposed as an MCP server (and a transparent proxy).**
 
-Consumer / self-hosted LLMs write code with the security posture of their training data — which is to
-say, insecurely by default, and often *plausibly* wrong: code that looks fine and isn't. This project
-wraps any OpenAI-compatible model in a **verify-and-repair loop** — generate, then *build and
-security-scan the result*, feed every compiler error and finding back, and regenerate — so the model
-cannot ship code that fails to compile or trips a detector without you knowing.
+The repository workflow starts with a project's quality requirements, security
+policy and executable checks. After an acceptable MVP is established, those
+checks guide repairs and constrain which changes are retained. As features,
+trust boundaries and deployment choices evolve, the team reviews the project
+and enhances the harness itself. Configuration and maintenance are part of
+this pipeline, not work the model eliminates.
 
-It is the operational form of a simple research result: **how you wrap the model (the harness)
-determines output security far more than which model you pick, and a secure-coding *prompt alone* is a
-trap — only the feedback loop delivers both security and buildability.**
+The accompanying paper evaluates project-configured repair, not autonomous
+discovery on unseen repositories. Its controller protects measured counts;
+finite checks do not guarantee every property or authorize release. The older
+snippet tools and proxy remain available, but are not the repository controller.
 
 > **Scope.** This project has two layers, and the research uses the second. The **snippet** layer
 > (`secure_generate`, `harden_code`, `audit_code`, `score_code`) generates and hardens code in
@@ -67,8 +69,8 @@ packs/<runtime>/<axis>/<tier>/pack.yaml
 mean the same thing everywhere, and cross-language rules that each language pack *binds* to its own
 detector, so one invariant keeps one id and one weight across a polyglot repository.
 
-The two repository tools above are how an agent in an unfamiliar repository asks the packs a
-question — `repo_inventory(repo, profile)` routes every file to the packs that read it and reports
+The two repository tools support initial configuration and subsequent project
+reviews. `repo_inventory(repo, profile)` routes every file to the packs that read it and reports
 what **nothing** reads; `module_guidance(repo, path, profile)` returns the rules that apply to *this*
 module because of its language, plus the project's declared facts and deployment context.
 

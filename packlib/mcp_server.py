@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """The pack system, exposed over MCP.
 
-Two tools, and they answer the two questions an agent working in an unfamiliar polyglot
-repository actually has:
+Two tools support configuring and maintaining checks for a polyglot project:
 
   repo_inventory   what is in this repository, which lanes will run on it, and — the part
                    nobody asks — which files NOTHING reads.

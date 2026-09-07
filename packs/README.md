@@ -1,5 +1,12 @@
 # Packs: the rule set, as an artifact you can read, edit and test
 
+
+Packs contain the requirements a team wires into its project's coding workflow.
+Once an acceptable MVP is established, these checks constrain subsequent repairs.
+Teams must periodically review the evolving project and extend or correct the
+checks. A static pack set cannot cover requirements it has never encoded.
+Project-specific wiring is intended; autonomous discovery on unseen repositories
+is not the research objective.
 A pack is one cell of a grid, and the directory layout is the grid:
 
 ```

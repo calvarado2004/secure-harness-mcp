@@ -1,5 +1,9 @@
 # The code-challenge prompts (verbatim, for reproduction & cross-model validation)
 
+These are historical prompts for a specified application. They are preserved
+verbatim; the current research concerns project-configured checks maintained
+around AI-assisted development, not unseen-repository discovery.
+
 *Everything needed to reproduce the app-generation experiment or challenge a new model with the
 identical task. All prompts are given exactly as sent. Source of truth: `parts.json` +
 `webapp_driver.py`. Temperature 0.4, generation budget 16384 tokens (raise for reasoning models).*
