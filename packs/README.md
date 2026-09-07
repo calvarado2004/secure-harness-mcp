@@ -1,146 +1,119 @@
-# Packs: the rule set, as an artifact you can read, edit and test
+# Policy packs: project requirements, bindings and controls
 
+Packs contain requirements a team wires into its project's coding workflow.
+Inspect the repository, declare the relevant security and quality rules,
+implement or select their checks, and validate them before establishing an
+acceptable MVP. Check subsequent additions against that baseline. Periodic
+project review may require new rules, readers and a new measured baseline.
 
-Packs contain the requirements a team wires into its project's coding workflow.
-Once an acceptable MVP is established, these checks constrain subsequent repairs.
-Teams must periodically review the evolving project and extend or correct the
-checks. A static pack set cannot cover requirements it has never encoded.
-Project-specific wiring is intended; autonomous discovery on unseen repositories
-is not the research objective.
-A pack is one cell of a grid, and the directory layout is the grid:
+A fixed pack set cannot cover requirements it has never encoded. This
+infrastructure supports project configuration and extension, not autonomous
+discovery on unseen repositories.
 
-```
+## Layout and ownership
+
+```text
 packs/<runtime>/<axis>/<tier>/pack.yaml
-       │         │      └── who owns it:  commodity < framework < org < project
-       │         └───────── what the gate promises:  security, authorization, practice
-       └─────────────────── which parser can open the file:  python, browser-js, sql ...
+orgs/<organization>/pack.yaml
+projects/<project>.yaml
 ```
 
-plus `packs/general/`, which holds what belongs to no language: the one severity scale, the
-word lists that mean the same thing everywhere (`secret`, `is_admin`, `token`), and
-cross-language rules that each language pack *binds* to its own detector.
+Shared severity definitions, vocabulary and cross-language rule identifiers
+live under `packs/general/`. Runtime packs bind rules to detector
+implementations. Profiles select packs and supply project facts such as
+public routes, identity guards and deployment assumptions.
 
-## Why it is shaped this way
+A new language starts with a runtime descriptor, but useful analysis also
+requires readers, detectors and controls. A new project requirement may need
+implementation work as well as YAML configuration.
 
-Before this, `repo_authz.py` held four different owners' knowledge in one file: how FastAPI
-expresses a route (true of every FastAPI project), which dependency establishes identity
-here (true of one company), which routes are public on purpose and which models are
-sensitive (true of one application), and a generic privilege vocabulary. Changing any one of
-them meant editing Python. Adding a language meant editing Python. A company with its own
-standards had nowhere to put them but a fork.
+| Operation | Composition constraint |
+|---|---|
+| Add a rule | State the attack or prevented failure and the applicable overreach |
+| Bind a detector | Reference an existing rule identifier |
+| Reweight | Use the shared severity scale; record the change |
+| Supply facts | Provide the declared project or organization facts |
+| Context reweight | Give a reason; unverified deployment claims leave reweights deferred |
+| Suppress | Supply a justification and a paired control file |
+| Redefine a higher-tier rule | Rejected by the loader |
 
-Three properties follow from the split, and they are the reason it was worth doing:
+Suppressions remain in `resolved.suppressed` and in inventory/guidance
+responses. **Visibility is not enforcement:** the paper's recorded acceptance
+state does not include a suppression-count coordinate. A consumer that wants
+to prohibit policy changes must protect or validate the policy itself.
 
-- **Extensible.** A new language is a directory. A new company standard is an overlay file.
-- **Testable.** Every pack ships its own controls and must pass `packtest` to load at all.
-- **Legible.** You can point at the line that caused any verdict, including "why was this
-  HIGH downgraded to LOW?" — `explain()` prints the history.
+## Run the checks
 
-## The five-minute tour
+Use the directory containing `packlib/` as the working directory:
+`evidence/` in the paper checkout, or the standalone harness checkout root.
+Install the required dependencies first.
 
-```bash
-cd evidence
-
-# what would the harness read here, and what can nothing read?
-python -m packlib.inspect_repo dealership car_dealership-experiment/car_dealership_original_code
-
-# which rules apply to ONE module, because of the language it is in?
-python -m packlib.inspect_repo dealership <repo> frontend/index.html
-
-# do all the packs discharge their obligations?
-python -m packlib.packtest
-
-# does the pack system itself still hold?  (equivalence + merge semantics + routing)
-python -m packlib.selftest_packs
+```sh
+python3 -m packlib.inspect_repo <profile> <repository>
+python3 -m packlib.inspect_repo <profile> <repository> <module-path>
+python3 -m packlib.packtest
+python3 -m packlib.selftest_packs
 ```
 
-## What a layer may do
+The inventory reports configured lanes, unread runtimes and unclaimed files.
+It does not execute all analyzers. Inspect the actual scan's measurement status;
+a configured lane is not proof of successful execution or complete coverage.
 
-| operation | who | rule |
-|---|---|---|
-| **add** a rule | any tier | must state its attack (security) or its prevented failure (practice), *and* its overreach |
-| **bind** a detector to a rule | language packs | the rule must already be declared; keeps one id and one weight across languages |
-| **reweight** | org, project | only onto the shared severity scale; recorded in the rule's history |
-| **supply facts** | org, project | answers a `requires_facts` a higher pack declared it needs |
-| **context reweight** | any | against `deployment:` — and `why` is mandatory |
-| **suppress** | org, project | **only** with a justification *and* a paired negative control on disk |
-| **delete / redefine** a higher tier's rule | nobody | the loader refuses, loudly |
+`packtest` is a separate validation command. The loader checks composition
+and isolation constraints but does **not** run the entire control suite on each
+load. Missing detector dependencies can produce skipped controls; review the
+skip count as well as the exit status.
 
-A suppressed rule **does not disappear.** It moves to `resolved.suppressed`, which is carried
-into the run state next to `(w, r, v, m)` so the gate can refuse any candidate that raises
-it. Without that, an overlay would be a legal way to shrink the search space while every
-total still trended down — which is the failure this whole project documents.
+## Validation obligations
 
-## What every pack owes you (`packtest` enforces all seven)
+Packs declare positive and paired negative controls, a distinct unmeasured
+verdict, limits, each rule's attack or prevented failure, held-out status and
+security-rule overreach. `packtest` checks these obligations where supported.
 
-1. **A positive control** — a deliberately defective artifact every rule must flag. Without
-   it you cannot tell "this codebase is clean" from "my rule is broken."
-2. **A paired negative control** — for every false-positive filter, a real defect it must
-   still catch. Writing the browser lane, these caught two rule bugs in minutes, one of
-   which was double-counting every finding (load 91 where the truth was 43).
-3. **An unmeasured verdict** — how the pack says "I could not read this," distinct from
-   "clean." Every AST engine returns zero on a file that does not parse.
-4. **Stated limits** — a non-empty `LIMITS.md`. A bespoke lane whose limits are undocumented
-   will be read as a complete one.
-5. **Attack or failure, per rule** — security rules state the attack; practice rules state
-   the failure prevented. A rule that states neither must not carry weight.
-6. **Held-out isolation** — a pack marked `heldout: true` is refused by the loader, so
-   Semgrep's independence is mechanical rather than conventional.
-7. **Overreach, per security rule** — *what does a too-strict application of this break?*
-   Security wants everything closed and least privilege is the right instinct, but a real
-   stack has to connect to things. A rule that cannot say what over-applying it costs gets
-   applied where it does not belong, breaks a working deployment, and is switched off —
-   taking the attack it *did* stop with it. "None known" is a legitimate answer; silence is
-   not, because silence is indistinguishable from never having asked.
+A parse failure must not be read as a clean scan. A rule's declared
+unmeasured verdict and its implemented error handling both need validation.
+Finite paired controls exercise selected cases; they do not prove complete
+coverage or the absence of false positives.
 
-## The rule that came out of reviewing this system
+The loader refuses a pack marked `heldout: true`. This prevents that pack
+from entering a resolved policy, but does not by itself prove independence
+of every historical experiment. Which analyzer supplied repair feedback must
+be established from the campaign's records.
 
-**Every value copied out of code into a pack gets an equality control, or it is not
-configuration — it is a second source of truth waiting to drift.** Four values were
-duplicated into pack files during the build with nothing checking them, and one had
-*already* diverged: the browser `inert` regex, written as a readable multi-line block
-scalar, carried newlines the compiled pattern does not. The pack documented a different
-regex than the lane ran, and no total anywhere would have shown it. `selftest_packs` now
-asserts character-for-character equality for every one of them.
+`selftest_packs` checks merge semantics, routing and duplicated constants.
+Its equality controls were added after a YAML regex diverged from the
+implemented pattern. See the paper's harness-history report or the standalone
+harness's `HISTORY.md` for the maintenance record.
 
-Two more found in the same pass, both fixed with controls:
+## Available readers and remaining gaps
 
-- `for_runtime` returned cross-language rules to every language, so a Python module would
-  have been advised about `localStorage`. A rule declared in `general/` now reaches only the
-  runtimes that actually **bind** it. Advice for the wrong language is worse than none — it
-  is how a practitioner learns to stop reading the output.
-- `fp_rules` was declared in a pack and read by nobody. Data that looks like configuration
-  and configures nothing is worse than absent data, because a reader will believe it.
+Coverage is profile-dependent; the following lists implemented pack families,
+not a promise to analyze every file in those languages.
 
-## Adding a language
+| Runtime | Available checks or status |
+|---|---|
+| Python | Static/practice checks; FastAPI, Flask, flask-restx and flask-restful authorization bindings; seed and object-store checks |
+| Browser JavaScript | Selected frontend sinks and practice checks |
+| Node JavaScript/TypeScript | Express authorization binding; other frameworks are not implied |
+| Container configuration | Compose checks; this is not full Dockerfile/Kubernetes analysis |
+| SQL | Seed checks |
+| nginx | Selected edge-configuration checks |
+| Configuration files | Committed credential checks |
+| Swift, shell, Go, Java, C, C++ | Detect-only in the pack system |
 
-1. `packs/<runtime>/pack.yaml` with a `detect:` block and an `unmeasured_verdict`. Stop
-   here and you have a **detect-only** runtime: its files are inventoried as UNREAD rather
-   than silently ignored. That is a legitimate state to ship — `c`, `cpp`, `go`, `java`,
-   `shell`, `sql`, `node-js` and `container` are all in it today.
-2. `packs/<runtime>/<axis>/commodity/` with rules, controls and `LIMITS.md`.
-3. `python -m packlib.packtest <runtime>` until it is green.
-4. Bind any cross-language rule from `general/practice` rather than inventing a second id
-   for the same invariant.
+A runtime descriptor can still say detect-only while an optional framework
+pack supplies a lane. The resolved profile and inventory determine the
+selected coverage; the descriptor alone is not the final coverage report.
 
-## Runtimes today
+## Extending the packs
 
-| runtime | status | note |
-|---|---|---|
-| `python` | lanes: bandit, codeql, credential-logging, authz (FastAPI), practice | |
-| `browser-js` | lanes: frontend sinks, practice | the blind spot that motivated all of this |
-| `container` | detect-only | Dockerfile / compose / k8s. Also supplies `deployment:` context that reprices other packs' findings |
-| `sql` | detect-only | found by the inventory, not by design: `init-db.sql` was claimed by nothing |
-| `node-js` | detect-only | same extensions as the browser, different sinks — the profile breaks the tie |
-| `shell`, `go`, `java`, `c`, `cpp` | detect-only | |
+1. Declare runtime detection and how unread input is reported.
+2. Implement or bind the needed reader and detector; record limits.
+3. Add controls for the defect, intended valid behavior and unavailable input.
+4. Load the project profile and inspect routing and deferred reweights.
+5. Run `packtest` and `selftest_packs`, then validate the project-level
+   measurements and establish the baseline.
 
-## Files
-
-- `packlib/loader.py` — composition and the tier contract
-- `packlib/detect.py` — file → runtime routing, and the blind-spot inventory
-- `packlib/packtest.py` — the seven obligations
-- `packlib/selftest_packs.py` — equivalence with the pre-pack code, merge semantics, routing
-- `packlib/inspect_repo.py` — CLI, and the backing for the `repo_inventory` /
-  `module_guidance` MCP tools
-- `projects/*.yaml` — one file per subject: facts, deployment, spec
-- `orgs/*/pack.yaml` — company overlays (`acme` is a worked example)
+The implementation is in `packlib/loader.py`, `detect.py`,
+`packtest.py`, `selftest_packs.py` and `inspect_repo.py`.
+The standalone MCP entry point is `packlib/mcp_server.py`.
